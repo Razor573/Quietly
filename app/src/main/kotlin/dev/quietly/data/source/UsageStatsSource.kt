@@ -5,10 +5,11 @@ import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
-import android.os.Build
+import android.util.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dev.quietly.data.db.entity.AppUsageEntity
-import java.time.LocalDate
+import dev.quietly.domain.RawUsageEvent
+import dev.quietly.domain.UsageEventAggregator
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -37,69 +38,30 @@ class UsageStatsSource @Inject constructor(
         "com.samsung.android.honeyboard"
     )
 
-    // API 31+ category int values — use raw ints so KSP/kotlinc never
-    // sees an unresolved symbol reference on minSdk 26 build runners.
-    // Values sourced from AOSP ApplicationInfo.java (stable, never change):
-    //   CATEGORY_MUSIC = 8, CATEGORY_PRODUCTIVITY = 9, CATEGORY_ACCESSIBILITY = 11
-    private val CATEGORY_MUSIC_INT         = 8
-    private val CATEGORY_PRODUCTIVITY_INT  = 9
-    private val CATEGORY_ACCESSIBILITY_INT = 11
-
-    fun queryToday(): List<AppUsageEntity> = queryRange(
-        LocalDate.now().toEpochDay().toInt(),
-        LocalDate.now().toEpochDay().toInt()
-    )
+    fun queryToday(): List<AppUsageEntity> {
+        val nowMs = System.currentTimeMillis()
+        val fromMs = nowMs - DAY_MS
+        val fromEpochDay = fromMs / DAY_MS
+        val toEpochDay = nowMs / DAY_MS
+        return queryWindow(
+            fromMs = fromMs,
+            toMsExclusive = nowMs,
+            fromEpochDay = fromEpochDay,
+            toEpochDay = toEpochDay,
+            nowMs = nowMs,
+            diagnosticLabel = "last24h"
+        )
+    }
 
     fun queryRange(fromEpochDay: Int, toEpochDay: Int): List<AppUsageEntity> {
-        val fromMs = epochDayToMs(fromEpochDay)
-        val toMs   = epochDayToMs(toEpochDay) + 86_400_000L
-
-        data class Acc(var resumeTs: Long = -1L, var totalMs: Long = 0L, var launches: Int = 0)
-        val acc = mutableMapOf<String, Acc>()
-
-        val events = usm.queryEvents(fromMs, toMs)
-        val event  = UsageEvents.Event()
-        while (events.hasNextEvent()) {
-            events.getNextEvent(event)
-            val pkg = event.packageName
-            if (pkg in blockList) continue
-            if (!isUserApp(pkg)) continue
-            val a = acc.getOrPut(pkg) { Acc() }
-            when (event.eventType) {
-                UsageEvents.Event.ACTIVITY_RESUMED -> {
-                    a.resumeTs = event.timeStamp
-                    a.launches++
-                }
-                UsageEvents.Event.ACTIVITY_PAUSED -> {
-                    if (a.resumeTs > 0) {
-                        a.totalMs += (event.timeStamp - a.resumeTs).coerceAtLeast(0)
-                        a.resumeTs = -1
-                    }
-                }
-            }
-        }
         val nowMs = System.currentTimeMillis()
-        acc.values.forEach { a ->
-            if (a.resumeTs > 0) {
-                a.totalMs += (nowMs - a.resumeTs).coerceAtLeast(0)
-                a.resumeTs = -1
-            }
-        }
-
-        val today = LocalDate.now().toEpochDay().toInt()
-        return acc.entries
-            .filter { it.value.totalMs > 0 }
-            .map { (pkg, a) ->
-                AppUsageEntity(
-                    packageName  = pkg,
-                    dateEpochDay = today,
-                    appLabel     = getLabel(pkg),
-                    totalTimeMs  = a.totalMs,
-                    launchCount  = a.launches,
-                    category     = getCategory(pkg)
-                )
-            }
-            .sortedByDescending { it.totalTimeMs }
+        return queryWindow(
+            fromMs = epochDayToMs(fromEpochDay.toLong()),
+            toMsExclusive = epochDayToMs(toEpochDay.toLong() + 1L),
+            fromEpochDay = fromEpochDay.toLong(),
+            toEpochDay = toEpochDay.toLong(),
+            nowMs = nowMs
+        )
     }
 
     private fun isUserApp(pkg: String): Boolean = try {
@@ -116,27 +78,96 @@ class UsageStatsSource @Inject constructor(
     } catch (_: Exception) { "Other" }
 
     private fun categoryFromPmCategory(info: ApplicationInfo): String {
-        // These constants are available on all API levels >= 26
-        val baseCategory = when (info.category) {
-            ApplicationInfo.CATEGORY_GAME   -> "Games"
-            ApplicationInfo.CATEGORY_SOCIAL -> "Social"
-            ApplicationInfo.CATEGORY_VIDEO  -> "Video"
-            ApplicationInfo.CATEGORY_NEWS   -> "News"
-            ApplicationInfo.CATEGORY_MAPS   -> "Maps"
-            else                            -> null
-        }
-        if (baseCategory != null) return baseCategory
-
-        // Use raw int values for API 31+ categories — avoids KSP unresolved
-        // reference on minSdk 26 runners regardless of runtime version guards.
         return when (info.category) {
+            CATEGORY_GAME_INT          -> "Games"
+            CATEGORY_AUDIO_INT         -> "Audio"
+            CATEGORY_VIDEO_INT         -> "Video"
+            CATEGORY_IMAGE_INT         -> "Image"
+            CATEGORY_SOCIAL_INT        -> "Social"
+            CATEGORY_NEWS_INT          -> "News"
+            CATEGORY_MAPS_INT          -> "Maps"
             CATEGORY_MUSIC_INT         -> "Music"
             CATEGORY_PRODUCTIVITY_INT  -> "Productivity"
             CATEGORY_ACCESSIBILITY_INT -> "Accessibility"
+            CATEGORY_UNDEFINED_INT     -> "Other"
             else                       -> "Other"
         }
     }
 
-    private fun epochDayToMs(epochDay: Int): Long =
-        epochDay.toLong() * 86_400_000L
+    private fun queryWindow(
+        fromMs: Long,
+        toMsExclusive: Long,
+        fromEpochDay: Long,
+        toEpochDay: Long,
+        nowMs: Long,
+        diagnosticLabel: String? = null
+    ): List<AppUsageEntity> {
+        val events = usm.queryEvents(fromMs, toMsExclusive)
+        val event = UsageEvents.Event()
+        var totalEventsSeen = 0
+        val mappedEvents = mutableListOf<RawUsageEvent>()
+
+        while (events.hasNextEvent()) {
+            events.getNextEvent(event)
+            totalEventsSeen++
+            val pkg = event.packageName ?: continue
+            if (pkg in blockList) continue
+            if (!isUserApp(pkg)) continue
+            val mappedType = mapEventType(event.eventType) ?: continue
+            mappedEvents += RawUsageEvent(
+                packageName = pkg,
+                eventType = mappedType,
+                timestampMs = event.timeStamp
+            )
+        }
+
+        if (diagnosticLabel != null) {
+            Log.d(
+                TAG,
+                "Usage events seen ($diagnosticLabel): total=$totalEventsSeen, mapped=${mappedEvents.size}"
+            )
+        }
+
+        return UsageEventAggregator.aggregate(
+            events = mappedEvents,
+            fromEpochDay = fromEpochDay,
+            toEpochDay = toEpochDay,
+            nowMs = nowMs
+        ).map { daily ->
+            AppUsageEntity(
+                packageName = daily.packageName,
+                dateEpochDay = daily.epochDay.toInt(),
+                appLabel = getLabel(daily.packageName),
+                totalTimeMs = daily.totalMs,
+                launchCount = daily.launches,
+                category = getCategory(daily.packageName),
+                lastSeenEpochDay = daily.epochDay.toInt()
+            )
+        }.sortedWith(compareByDescending<AppUsageEntity> { it.dateEpochDay }.thenByDescending { it.totalTimeMs })
+    }
+
+    private fun mapEventType(eventType: Int): Int? = when (eventType) {
+        UsageEvents.Event.ACTIVITY_RESUMED -> UsageEventAggregator.EVENT_ACTIVITY_RESUMED
+        UsageEvents.Event.ACTIVITY_PAUSED -> UsageEventAggregator.EVENT_ACTIVITY_PAUSED
+        UsageEvents.Event.ACTIVITY_STOPPED -> UsageEventAggregator.EVENT_ACTIVITY_STOPPED
+        else -> null
+    }
+
+    private fun epochDayToMs(epochDay: Long): Long = epochDay * DAY_MS
+
+    private companion object {
+        private const val TAG = "UsageStatsSource"
+        private const val DAY_MS = 86_400_000L
+        private const val CATEGORY_UNDEFINED_INT = -1
+        private const val CATEGORY_GAME_INT = 0
+        private const val CATEGORY_AUDIO_INT = 1
+        private const val CATEGORY_VIDEO_INT = 3
+        private const val CATEGORY_IMAGE_INT = 4
+        private const val CATEGORY_SOCIAL_INT = 5
+        private const val CATEGORY_NEWS_INT = 6
+        private const val CATEGORY_MAPS_INT = 7
+        private const val CATEGORY_MUSIC_INT = 8
+        private const val CATEGORY_PRODUCTIVITY_INT = 9
+        private const val CATEGORY_ACCESSIBILITY_INT = 11
+    }
 }
