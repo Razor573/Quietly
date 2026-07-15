@@ -8,11 +8,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import dev.quietly.data.db.entity.AppUsageEntity
 import dev.quietly.data.db.entity.GoalEntity
+import dev.quietly.util.toHoursMinutesDisplay
 
 @Composable
 fun AppUsageRow(
-    usage: AppUsageEntity,
-    goal : GoalEntity? = null
+    usage        : AppUsageEntity,
+    goal         : GoalEntity? = null,
+    showLaunches : Boolean     = false
 ) {
     val overLimit = goal != null && usage.totalTimeMs > goal.dailyLimitMs
 
@@ -27,33 +29,41 @@ fun AppUsageRow(
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Row(
-                modifier            = Modifier.fillMaxWidth(),
+                modifier              = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment   = Alignment.CenterVertically
+                verticalAlignment     = Alignment.CenterVertically
             ) {
-                Text(
-                    text  = usage.appLabel,
-                    style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.weight(1f)
-                )
+                // App name + optional launch count
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text  = usage.appLabel,
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    if (showLaunches) {
+                        Text(
+                            text  = "${usage.launchCount} open${if (usage.launchCount != 1) "s" else ""}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)
+                        )
+                    }
+                }
                 Text(
                     text  = usage.totalTimeMs.toHoursMinutesDisplay(),
                     style = MaterialTheme.typography.bodyMedium
                 )
             }
+
             if (goal != null) {
                 Spacer(Modifier.height(6.dp))
                 LinearProgressIndicator(
                     progress = { (usage.totalTimeMs.toFloat() / goal.dailyLimitMs).coerceIn(0f, 1f) },
                     modifier = Modifier.fillMaxWidth(),
-                    color    = if (overLimit)
-                        MaterialTheme.colorScheme.error
-                    else
-                        MaterialTheme.colorScheme.primary
+                    color    = if (overLimit) MaterialTheme.colorScheme.error
+                               else MaterialTheme.colorScheme.primary
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    text  = "Goal: ${goal.dailyLimitMs.toHoursMinutesDisplay()}",
+                    text  = "Limit: ${goal.dailyLimitMs.toHoursMinutesDisplay()}",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                 )
