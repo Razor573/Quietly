@@ -37,31 +37,19 @@ fun SettingsScreen(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
-
-            // ── Theme ────────────────────────────────────────────────────────────
-            SettingsRow(
-                title    = "Dark theme",
-                subtitle = "Always use dark mode"
-            ) {
+            SettingsRow("Dark theme", "Always use dark mode") {
                 Switch(checked = s.darkTheme, onCheckedChange = vm::setDarkTheme)
             }
             HorizontalDivider()
 
-            // ── Analysis window ─────────────────────────────────────────────────
             Column {
-                Text(
-                    "Importance analysis window: ${s.analysisWindowDays} days",
-                    style = MaterialTheme.typography.bodyLarge
-                )
-                Text(
-                    "The primary window used by the importance engine to score your apps. 90 days gives the most accurate signal.",
+                Text("Importance analysis window: ${s.analysisWindowDays} days",
+                    style = MaterialTheme.typography.bodyLarge)
+                Text("The primary window used by the importance engine. 90 days gives the most accurate signal.",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                )
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
                 Spacer(Modifier.height(8.dp))
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf(7, 30, 90).forEach { days ->
                         FilterChip(
                             selected = s.analysisWindowDays == days,
@@ -73,17 +61,12 @@ fun SettingsScreen(
             }
             HorizontalDivider()
 
-            // ── Data retention ─────────────────────────────────────────────────
             Column {
-                Text(
-                    "Data retention: ${s.retentionDays} days",
-                    style = MaterialTheme.typography.bodyLarge
-                )
-                Text(
-                    "Usage history older than this is deleted automatically. Keep at least 90 days for best insights.",
+                Text("Data retention: ${s.retentionDays} days",
+                    style = MaterialTheme.typography.bodyLarge)
+                Text("Usage history older than this is deleted automatically. Keep at least 90 days for best insights.",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                )
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
                 Spacer(Modifier.height(8.dp))
                 Slider(
                     value         = s.retentionDays.toFloat(),
@@ -91,36 +74,28 @@ fun SettingsScreen(
                     valueRange    = 30f..365f,
                     steps         = 33
                 )
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text("30 days", style = MaterialTheme.typography.labelSmall)
                     Text("1 year",  style = MaterialTheme.typography.labelSmall)
                 }
             }
             HorizontalDivider()
 
-            // ── Optional online metadata ──────────────────────────────────────────
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 SettingsRow(
                     title    = "Online app metadata (opt-in)",
                     subtitle = "Fetch minimal category info for unknown apps to improve scoring. Defaults OFF."
                 ) {
-                    Switch(
-                        checked         = s.onlineMetadataEnabled,
-                        onCheckedChange = vm::setOnlineMetadata
-                    )
+                    Switch(checked = s.onlineMetadataEnabled, onCheckedChange = vm::setOnlineMetadata)
                 }
                 if (s.onlineMetadataEnabled) {
                     Surface(
-                        shape  = MaterialTheme.shapes.small,
-                        color  = MaterialTheme.colorScheme.tertiaryContainer
+                        shape = MaterialTheme.shapes.small,
+                        color = MaterialTheme.colorScheme.tertiaryContainer
                     ) {
                         Text(
-                            "📡 When enabled, Quietly sends the app package name to a lookup service " +
-                            "to retrieve its category. No personal data is included. Results are " +
-                            "cached locally and requests are minimal.",
+                            "\uD83D\uDCE1 When enabled, Quietly sends the app package name to a lookup service " +
+                            "to retrieve its category. No personal data is included. Results are cached locally.",
                             style    = MaterialTheme.typography.labelSmall,
                             color    = MaterialTheme.colorScheme.onTertiaryContainer,
                             modifier = Modifier.padding(10.dp)
@@ -130,11 +105,9 @@ fun SettingsScreen(
             }
             HorizontalDivider()
 
-            // ── PIN lock ───────────────────────────────────────────────────────────
             SettingsRow(
                 title    = "PIN lock",
-                subtitle = if (s.pinEnabled) "App is PIN-protected"
-                           else "Protect Quietly with a 4-digit PIN"
+                subtitle = if (s.pinEnabled) "App is PIN-protected" else "Protect Quietly with a 4-digit PIN"
             ) {
                 Button(onClick = { showPinDialog = true }) {
                     Text(if (s.pinEnabled) "Change / Remove" else "Set PIN")
@@ -142,24 +115,18 @@ fun SettingsScreen(
             }
             HorizontalDivider()
 
-            // ── Privacy notice card ──────────────────────────────────────────────
-            Card(
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant
-                )
-            ) {
+            Card(colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant
+            )) {
                 Column(Modifier.padding(14.dp)) {
-                    Text(
-                        "🔒 Privacy & Security",
-                        style      = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold
-                    )
+                    Text("\uD83D\uDD12 Privacy & Security",
+                        style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        • + " All usage data stays on your device. AES-256-GCM encrypted.\n" +
-                        • + " No internet permission is required for core features.\n" +
-                        • + " Cloud and device backups are disabled.\n" +
-                        • + " Online metadata is strictly opt-in and clearly disclosed.",
+                        BULLET + " All usage data stays on your device. AES-256-GCM encrypted.\n" +
+                        BULLET + " No internet permission is required for core features.\n" +
+                        BULLET + " Cloud and device backups are disabled.\n" +
+                        BULLET + " Online metadata is strictly opt-in and clearly disclosed.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -178,11 +145,7 @@ fun SettingsScreen(
 }
 
 @Composable
-private fun SettingsRow(
-    title:    String,
-    subtitle: String,
-    trailing: @Composable () -> Unit
-) {
+private fun SettingsRow(title: String, subtitle: String, trailing: @Composable () -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text(title,    style = MaterialTheme.typography.bodyLarge)
@@ -205,31 +168,26 @@ private fun PinDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title   = { Text(if (hasPinAlready) "Change PIN" else "Set PIN") },
-        text    = {
+        title = { Text(if (hasPinAlready) "Change PIN" else "Set PIN") },
+        text  = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
-                    value         = pin,
-                    onValueChange = { if (it.length <= 4 && it.all { c -> c.isDigit() }) pin = it },
-                    label         = { Text("4-digit PIN") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                    value = pin, onValueChange = { if (it.length <= 4 && it.all { c -> c.isDigit() }) pin = it },
+                    label = { Text("4-digit PIN") },
+                    keyboardOptions      = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
                     visualTransformation = PasswordVisualTransformation(),
-                    singleLine    = true
+                    singleLine = true
                 )
                 OutlinedTextField(
-                    value         = pin2,
-                    onValueChange = { if (it.length <= 4 && it.all { c -> c.isDigit() }) pin2 = it },
-                    label         = { Text("Confirm PIN") },
-                    isError       = mismatch,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                    value = pin2, onValueChange = { if (it.length <= 4 && it.all { c -> c.isDigit() }) pin2 = it },
+                    label = { Text("Confirm PIN") }, isError = mismatch,
+                    keyboardOptions      = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
                     visualTransformation = PasswordVisualTransformation(),
-                    singleLine    = true
+                    singleLine = true
                 )
-                if (mismatch) Text(
-                    "PINs don't match",
+                if (mismatch) Text("PINs don\u2019t match",
                     color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.labelSmall
-                )
+                    style = MaterialTheme.typography.labelSmall)
                 if (hasPinAlready) {
                     TextButton(onClick = { onConfirm(null) }) {
                         Text("Remove PIN", color = MaterialTheme.colorScheme.error)
@@ -238,13 +196,11 @@ private fun PinDialog(
             }
         },
         confirmButton = {
-            TextButton(
-                onClick  = { if (pin.length == 4 && pin == pin2) onConfirm(pin) },
-                enabled  = pin.length == 4 && !mismatch
-            ) { Text("Save") }
+            TextButton(onClick = { if (pin.length == 4 && pin == pin2) onConfirm(pin) },
+                enabled = pin.length == 4 && !mismatch) { Text("Save") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
 }
 
-private const val • = "\u2022"
+private const val BULLET = "\u2022"
