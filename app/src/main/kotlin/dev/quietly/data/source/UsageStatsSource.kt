@@ -5,6 +5,7 @@ import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
+import android.os.Build
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dev.quietly.data.db.entity.AppUsageEntity
 import java.time.LocalDate
@@ -20,7 +21,7 @@ class UsageStatsSource @Inject constructor(
 
     /** System / launcher packages to always exclude */
     private val blockList = setOf(
-        ctx.packageName,                          // Quietly itself
+        ctx.packageName,
         "com.android.launcher3",
         "com.android.launcher",
         "com.google.android.apps.nexuslauncher",
@@ -37,10 +38,6 @@ class UsageStatsSource @Inject constructor(
         "com.samsung.android.honeyboard"
     )
 
-    /**
-     * Returns today's usage for all non-system/non-blocked apps.
-     * Uses ACTIVITY_RESUMED / ACTIVITY_PAUSED events for accurate foreground time.
-     */
     fun queryToday(): List<AppUsageEntity> = queryRange(
         LocalDate.now().toEpochDay().toInt(),
         LocalDate.now().toEpochDay().toInt()
@@ -50,7 +47,6 @@ class UsageStatsSource @Inject constructor(
         val fromMs = epochDayToMs(fromEpochDay)
         val toMs   = epochDayToMs(toEpochDay) + 86_400_000L
 
-        // foreground-time accumulator: pkg -> (resumeTimestamp, totalMs, launchCount)
         data class Acc(var resumeTs: Long = -1L, var totalMs: Long = 0L, var launches: Int = 0)
         val acc = mutableMapOf<String, Acc>()
 
@@ -75,7 +71,6 @@ class UsageStatsSource @Inject constructor(
                 }
             }
         }
-        // close any still-open sessions (app currently foreground)
         val nowMs = System.currentTimeMillis()
         acc.values.forEach { a ->
             if (a.resumeTs > 0) {
@@ -110,24 +105,40 @@ class UsageStatsSource @Inject constructor(
     } catch (_: Exception) { pkg }
 
     private fun getCategory(pkg: String): String = try {
-        val info = pm.getApplicationInfo(pkg, 0)
-        when (pm.getApplicationLabel(info).toString().lowercase()) {
-            else -> categoryFromPmCategory(pm.getApplicationInfo(pkg, 0))
-        }
+        categoryFromPmCategory(pm.getApplicationInfo(pkg, 0))
     } catch (_: Exception) { "Other" }
 
+    /**
+     * Map ApplicationInfo.category to a human-readable string.
+     *
+     * CATEGORY_MUSIC, CATEGORY_PRODUCTIVITY, and CATEGORY_ACCESSIBILITY were
+     * added in API 31 (Android 12 / Build.VERSION_CODES.S). Guard them so the
+     * code compiles and runs correctly on minSdk 26.
+     */
     private fun categoryFromPmCategory(info: ApplicationInfo): String {
-        return when (info.category) {
-            ApplicationInfo.CATEGORY_GAME            -> "Games"
-            ApplicationInfo.CATEGORY_SOCIAL          -> "Social"
-            ApplicationInfo.CATEGORY_VIDEO           -> "Video"
-            ApplicationInfo.CATEGORY_NEWS            -> "News"
-            ApplicationInfo.CATEGORY_MAPS            -> "Maps"
-            ApplicationInfo.CATEGORY_MUSIC           -> "Music"
-            ApplicationInfo.CATEGORY_PRODUCTIVITY    -> "Productivity"
-            ApplicationInfo.CATEGORY_ACCESSIBILITY   -> "Accessibility"
-            else                                     -> "Other"
+        // API 26+ constants
+        val baseCategory = when (info.category) {
+            ApplicationInfo.CATEGORY_GAME   -> "Games"
+            ApplicationInfo.CATEGORY_SOCIAL -> "Social"
+            ApplicationInfo.CATEGORY_VIDEO  -> "Video"
+            ApplicationInfo.CATEGORY_NEWS   -> "News"
+            ApplicationInfo.CATEGORY_MAPS   -> "Maps"
+            else                            -> null
         }
+        if (baseCategory != null) return baseCategory
+
+        // API 31+ constants — only reference them on S+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val api31Category = when (info.category) {
+                ApplicationInfo.CATEGORY_MUSIC          -> "Music"
+                ApplicationInfo.CATEGORY_PRODUCTIVITY   -> "Productivity"
+                ApplicationInfo.CATEGORY_ACCESSIBILITY  -> "Accessibility"
+                else                                    -> null
+            }
+            if (api31Category != null) return api31Category
+        }
+
+        return "Other"
     }
 
     private fun epochDayToMs(epochDay: Int): Long =

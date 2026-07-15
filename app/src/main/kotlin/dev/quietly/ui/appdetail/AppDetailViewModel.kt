@@ -8,6 +8,7 @@ import dev.quietly.data.db.entity.AppUsageEntity
 import dev.quietly.domain.repository.UsageRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.LocalDate
@@ -39,10 +40,9 @@ class AppDetailViewModel @Inject constructor(
             val history = usageRepo.historyForApp(pkg, 30)
             val todayRow = history.firstOrNull { it.dateEpochDay == today }
 
-            // Build per-day totals for the chart from history
             val weeklyTotals = history
-                .filter  { it.dateEpochDay in from7..today }
-                .map     { DayTotal(it.dateEpochDay, it.totalTimeMs) }
+                .filter   { it.dateEpochDay in from7..today }
+                .map      { DayTotal(it.dateEpochDay, it.totalTimeMs) }
                 .sortedBy { it.dateEpochDay }
 
             val avg = if (history.isNotEmpty())
@@ -57,7 +57,6 @@ class AppDetailViewModel @Inject constructor(
                     avgDailyMs   = avg,
                     weeklyTotals = weeklyTotals,
                     history      = history,
-                    // Deep-link to Play Store — no API key needed
                     playStoreUrl = "https://play.google.com/store/apps/details?id=$pkg"
                 )
             }
