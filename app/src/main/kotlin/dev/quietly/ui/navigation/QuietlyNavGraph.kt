@@ -40,13 +40,13 @@ fun QuietlyNavGraph(startDestination: String) {
             )
         }
 
-        composable(Screen.Dashboard.route)  { DashboardScreen(nav) }
-        composable(Screen.Apps.route)       { AppsScreen(nav) }
-        composable(Screen.Goals.route)      { GoalsScreen(nav) }
-        composable(Screen.Insights.route)   { InsightsScreen(nav) }
-        composable(Screen.Settings.route)   { SettingsScreen(nav) }
+        composable(Screen.Dashboard.route) { DashboardScreen(nav) }
+        composable(Screen.Apps.route)      { AppsScreen(nav) }
+        composable(Screen.Goals.route)     { GoalsScreen(nav) }
+        composable(Screen.Insights.route)  { InsightsScreen(nav) }
+        composable(Screen.Settings.route)  { SettingsScreen(nav) }
 
-        composable(Screen.AppDetail.route)  { back ->
+        composable(Screen.AppDetail.route) { back ->
             val pkg = back.arguments?.getString("packageName") ?: return@composable
             AppDetailScreen(pkg = pkg, nav = nav)
         }

@@ -35,9 +35,9 @@ class AppDetailViewModel @Inject constructor(
 
     fun load(pkg: String) {
         viewModelScope.launch {
-            val today   = LocalDate.now().toEpochDay().toInt()
-            val from7   = today - 6
-            val history = usageRepo.historyForApp(pkg, 30)
+            val today    = LocalDate.now().toEpochDay().toInt()
+            val from7    = today - 6
+            val history  = usageRepo.historyForApp(pkg, 30)
             val todayRow = history.firstOrNull { it.dateEpochDay == today }
 
             val weeklyTotals = history

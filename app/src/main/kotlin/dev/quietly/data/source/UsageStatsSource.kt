@@ -19,7 +19,6 @@ class UsageStatsSource @Inject constructor(
     private val usm = ctx.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
     private val pm  = ctx.packageManager
 
-    /** System / launcher packages to always exclude */
     private val blockList = setOf(
         ctx.packageName,
         "com.android.launcher3",
@@ -108,15 +107,7 @@ class UsageStatsSource @Inject constructor(
         categoryFromPmCategory(pm.getApplicationInfo(pkg, 0))
     } catch (_: Exception) { "Other" }
 
-    /**
-     * Map ApplicationInfo.category to a human-readable string.
-     *
-     * CATEGORY_MUSIC, CATEGORY_PRODUCTIVITY, and CATEGORY_ACCESSIBILITY were
-     * added in API 31 (Android 12 / Build.VERSION_CODES.S). Guard them so the
-     * code compiles and runs correctly on minSdk 26.
-     */
     private fun categoryFromPmCategory(info: ApplicationInfo): String {
-        // API 26+ constants
         val baseCategory = when (info.category) {
             ApplicationInfo.CATEGORY_GAME   -> "Games"
             ApplicationInfo.CATEGORY_SOCIAL -> "Social"
@@ -127,13 +118,12 @@ class UsageStatsSource @Inject constructor(
         }
         if (baseCategory != null) return baseCategory
 
-        // API 31+ constants — only reference them on S+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             val api31Category = when (info.category) {
-                ApplicationInfo.CATEGORY_MUSIC          -> "Music"
-                ApplicationInfo.CATEGORY_PRODUCTIVITY   -> "Productivity"
-                ApplicationInfo.CATEGORY_ACCESSIBILITY  -> "Accessibility"
-                else                                    -> null
+                ApplicationInfo.CATEGORY_MUSIC         -> "Music"
+                ApplicationInfo.CATEGORY_PRODUCTIVITY  -> "Productivity"
+                ApplicationInfo.CATEGORY_ACCESSIBILITY -> "Accessibility"
+                else                                   -> null
             }
             if (api31Category != null) return api31Category
         }
