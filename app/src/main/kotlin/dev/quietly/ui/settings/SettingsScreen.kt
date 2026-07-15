@@ -118,7 +118,7 @@ fun SettingsScreen(
                         color  = MaterialTheme.colorScheme.tertiaryContainer
                     ) {
                         Text(
-                            "📡 When enabled, Quietly sends the app package name to a lookup service " +
+                            "\uD83D\uDCE1 When enabled, Quietly sends the app package name to a lookup service " +
                             "to retrieve its category. No personal data is included. Results are " +
                             "cached locally and requests are minimal.",
                             style    = MaterialTheme.typography.labelSmall,
@@ -150,16 +150,16 @@ fun SettingsScreen(
             ) {
                 Column(Modifier.padding(14.dp)) {
                     Text(
-                        "🔒 Privacy & Security",
+                        "\uD83D\uDD12 Privacy & Security",
                         style      = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold
                     )
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        • + " All usage data stays on your device. AES-256-GCM encrypted.\n" +
-                        • + " No internet permission is required for core features.\n" +
-                        • + " Cloud and device backups are disabled.\n" +
-                        • + " Online metadata is strictly opt-in and clearly disclosed.",
+                        BULLET + " All usage data stays on your device. AES-256-GCM encrypted.\n" +
+                        BULLET + " No internet permission is required for core features.\n" +
+                        BULLET + " Cloud and device backups are disabled.\n" +
+                        BULLET + " Online metadata is strictly opt-in and clearly disclosed.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -226,7 +226,7 @@ private fun PinDialog(
                     singleLine    = true
                 )
                 if (mismatch) Text(
-                    "PINs don't match",
+                    "PINs don\u2019t match",
                     color = MaterialTheme.colorScheme.error,
                     style = MaterialTheme.typography.labelSmall
                 )
@@ -247,4 +247,5 @@ private fun PinDialog(
     )
 }
 
-private const val • = "\u2022"
+/** Unicode bullet point used in the privacy notice card. */
+private const val BULLET = "\u2022"

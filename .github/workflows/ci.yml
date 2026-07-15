@@ -21,7 +21,7 @@ jobs:
 
     steps:
       # ------------------------------------------------------------------ #
-      # 1. Checkout full history so gradlew permissions survive the clone
+      # 1. Checkout full history
       # ------------------------------------------------------------------ #
       - name: Checkout
         uses: actions/checkout@v4
@@ -36,24 +36,35 @@ jobs:
         with:
           java-version: '17'
           distribution: 'temurin'
-          cache: 'gradle'
 
       # ------------------------------------------------------------------ #
-      # 3. Make gradlew executable (the checkout may strip the +x bit)
+      # 3. Install Gradle 8.9 via the official setup action.
+      #    This action downloads the Gradle distribution from services.gradle.org
+      #    and wires it up — no gradle-wrapper.jar needs to be committed.
+      # ------------------------------------------------------------------ #
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+          cache-read-only: false
+
+      # ------------------------------------------------------------------ #
+      # 4. Regenerate the wrapper jar so ./gradlew works for all subsequent
+      #    steps (the jar is gitignored but required at runtime).
+      # ------------------------------------------------------------------ #
+      - name: Regenerate Gradle wrapper jar
+        run: gradle wrapper --gradle-version 8.9
+
+      # ------------------------------------------------------------------ #
+      # 5. Make gradlew executable (checkout may strip the +x bit on Linux)
       # ------------------------------------------------------------------ #
       - name: Make gradlew executable
         run: chmod +x ./gradlew
 
       # ------------------------------------------------------------------ #
-      # 4. Validate the Gradle wrapper (security best-practice)
+      # 6. Cache Gradle home + build caches between runs
       # ------------------------------------------------------------------ #
-      - name: Validate Gradle wrapper
-        uses: gradle/actions/wrapper-validation@v4
-
-      # ------------------------------------------------------------------ #
-      # 5. Cache Gradle home + build caches between runs
-      # ------------------------------------------------------------------ #
-      - name: Cache Gradle
+      - name: Cache Gradle dependencies
         uses: actions/cache@v4
         with:
           path: |
@@ -63,31 +74,30 @@ jobs:
           restore-keys: gradle-${{ runner.os }}-
 
       # ------------------------------------------------------------------ #
-      # 6. Run unit tests first — fail fast before spending time on the APK
+      # 7. Run unit tests first — fail fast before spending time on the APK
       # ------------------------------------------------------------------ #
       - name: Run unit tests
         run: ./gradlew :app:testDebugUnitTest --no-daemon --stacktrace
 
       # ------------------------------------------------------------------ #
-      # 7. Build debug APK
+      # 8. Build debug APK
       # ------------------------------------------------------------------ #
       - name: Build debug APK
         run: ./gradlew :app:assembleDebug --no-daemon --stacktrace
 
       # ------------------------------------------------------------------ #
-      # 8. Read versionName from gradle for a human-readable release tag
+      # 9. Read versionName from build.gradle.kts for a human-readable tag
       # ------------------------------------------------------------------ #
       - name: Extract versionName
         id: version
         run: |
-          VERSION=$(./gradlew -q :app:printVersionName 2>/dev/null || \
-            grep -oP '(?<=versionName = ")[^"]+' app/build.gradle.kts | head -1)
-          echo "name=${VERSION}" >> "$GITHUB_OUTPUT"
+          VERSION=$(grep -oP '(?<=versionName = ")[^"]+' app/build.gradle.kts | head -1)
           SHORT_SHA=$(git rev-parse --short HEAD)
+          echo "name=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "tag=v${VERSION}-build.${{ github.run_number }}-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
 
       # ------------------------------------------------------------------ #
-      # 9. Upload APK as a workflow artifact (always, even on PRs)
+      # 10. Upload APK as a workflow artifact (always — including PRs)
       # ------------------------------------------------------------------ #
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
@@ -97,11 +107,8 @@ jobs:
           retention-days: 30
 
       # ------------------------------------------------------------------ #
-      # 10. Create a versioned GitHub Release (only on pushes to main)
-      #
-      #     Uses softprops/action-gh-release@v2.
-      #     The tag includes the run number + short SHA so it is always
-      #     unique — no "tag already exists" errors from previous runs.
+      # 11. Create a versioned GitHub Release (only on pushes to main).
+      #     Tag includes run-number + short SHA → always unique, no collisions.
       # ------------------------------------------------------------------ #
       - name: Create GitHub Release with APK
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
