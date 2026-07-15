@@ -1,11 +1,14 @@
 package dev.quietly.ui.settings
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -30,69 +33,133 @@ fun SettingsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(pad)
-                .padding(16.dp),
+                .padding(16.dp)
+                .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
-            // ── Theme ─────────────────────────────────────────────────────
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("Dark theme", style = MaterialTheme.typography.bodyLarge)
-                    Text("Always use dark mode", style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
-                }
+
+            // ── Theme ────────────────────────────────────────────────────────────
+            SettingsRow(
+                title    = "Dark theme",
+                subtitle = "Always use dark mode"
+            ) {
                 Switch(checked = s.darkTheme, onCheckedChange = vm::setDarkTheme)
             }
-            Divider()
+            HorizontalDivider()
 
-            // ── Data retention ────────────────────────────────────────────
+            // ── Analysis window ─────────────────────────────────────────────────
             Column {
-                Text("Data retention: ${s.retentionDays} days",
-                    style = MaterialTheme.typography.bodyLarge)
-                Text("Usage history older than this is deleted automatically.",
+                Text(
+                    "Importance analysis window: ${s.analysisWindowDays} days",
+                    style = MaterialTheme.typography.bodyLarge
+                )
+                Text(
+                    "The primary window used by the importance engine to score your apps. 90 days gives the most accurate signal.",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                )
+                Spacer(Modifier.height(8.dp))
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    listOf(7, 30, 90).forEach { days ->
+                        FilterChip(
+                            selected = s.analysisWindowDays == days,
+                            onClick  = { vm.setAnalysisWindow(days) },
+                            label    = { Text("${days}d") }
+                        )
+                    }
+                }
+            }
+            HorizontalDivider()
+
+            // ── Data retention ─────────────────────────────────────────────────
+            Column {
+                Text(
+                    "Data retention: ${s.retentionDays} days",
+                    style = MaterialTheme.typography.bodyLarge
+                )
+                Text(
+                    "Usage history older than this is deleted automatically. Keep at least 90 days for best insights.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                )
                 Spacer(Modifier.height(8.dp))
                 Slider(
                     value         = s.retentionDays.toFloat(),
                     onValueChange = { vm.setRetention(it.toInt()) },
-                    valueRange    = 7f..365f,
-                    steps         = 35
+                    valueRange    = 30f..365f,
+                    steps         = 33
                 )
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("7 days",  style = MaterialTheme.typography.labelSmall)
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text("30 days", style = MaterialTheme.typography.labelSmall)
                     Text("1 year",  style = MaterialTheme.typography.labelSmall)
                 }
             }
-            Divider()
+            HorizontalDivider()
 
-            // ── PIN lock ──────────────────────────────────────────────────
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("PIN lock", style = MaterialTheme.typography.bodyLarge)
-                    Text(
-                        if (s.pinEnabled) "App is PIN-protected"
-                        else "Protect Quietly with a 4-digit PIN",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+            // ── Optional online metadata ──────────────────────────────────────────
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                SettingsRow(
+                    title    = "Online app metadata (opt-in)",
+                    subtitle = "Fetch minimal category info for unknown apps to improve scoring. Defaults OFF."
+                ) {
+                    Switch(
+                        checked         = s.onlineMetadataEnabled,
+                        onCheckedChange = vm::setOnlineMetadata
                     )
                 }
+                if (s.onlineMetadataEnabled) {
+                    Surface(
+                        shape  = MaterialTheme.shapes.small,
+                        color  = MaterialTheme.colorScheme.tertiaryContainer
+                    ) {
+                        Text(
+                            "📡 When enabled, Quietly sends the app package name to a lookup service " +
+                            "to retrieve its category. No personal data is included. Results are " +
+                            "cached locally and requests are minimal.",
+                            style    = MaterialTheme.typography.labelSmall,
+                            color    = MaterialTheme.colorScheme.onTertiaryContainer,
+                            modifier = Modifier.padding(10.dp)
+                        )
+                    }
+                }
+            }
+            HorizontalDivider()
+
+            // ── PIN lock ───────────────────────────────────────────────────────────
+            SettingsRow(
+                title    = "PIN lock",
+                subtitle = if (s.pinEnabled) "App is PIN-protected"
+                           else "Protect Quietly with a 4-digit PIN"
+            ) {
                 Button(onClick = { showPinDialog = true }) {
                     Text(if (s.pinEnabled) "Change / Remove" else "Set PIN")
                 }
             }
+            HorizontalDivider()
 
-            // ── Security notice ───────────────────────────────────────────
+            // ── Privacy notice card ──────────────────────────────────────────────
             Card(
                 colors = CardDefaults.cardColors(
                     containerColor = MaterialTheme.colorScheme.surfaceVariant
                 )
             ) {
-                Column(Modifier.padding(12.dp)) {
-                    Text("Privacy & Security", style = MaterialTheme.typography.titleSmall)
-                    Spacer(Modifier.height(4.dp))
+                Column(Modifier.padding(14.dp)) {
                     Text(
-                        "All data is stored locally on this device using AES-256-GCM encryption. " +
-                        "No data is ever sent to any server or cloud service.",
+                        "🔒 Privacy & Security",
+                        style      = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        • + " All usage data stays on your device. AES-256-GCM encrypted.\n" +
+                        • + " No internet permission is required for core features.\n" +
+                        • + " Cloud and device backups are disabled.\n" +
+                        • + " Online metadata is strictly opt-in and clearly disclosed.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -107,6 +174,22 @@ fun SettingsScreen(
             onDismiss     = { showPinDialog = false },
             onConfirm     = { pin -> vm.setPin(pin); showPinDialog = false }
         )
+    }
+}
+
+@Composable
+private fun SettingsRow(
+    title:    String,
+    subtitle: String,
+    trailing: @Composable () -> Unit
+) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(title,    style = MaterialTheme.typography.bodyLarge)
+            Text(subtitle, style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+        }
+        trailing()
     }
 }
 
@@ -142,9 +225,11 @@ private fun PinDialog(
                     visualTransformation = PasswordVisualTransformation(),
                     singleLine    = true
                 )
-                if (mismatch) Text("PINs don't match",
+                if (mismatch) Text(
+                    "PINs don't match",
                     color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.labelSmall)
+                    style = MaterialTheme.typography.labelSmall
+                )
                 if (hasPinAlready) {
                     TextButton(onClick = { onConfirm(null) }) {
                         Text("Remove PIN", color = MaterialTheme.colorScheme.error)
@@ -161,3 +246,5 @@ private fun PinDialog(
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
 }
+
+private const val • = "\u2022"

@@ -8,9 +8,11 @@ import kotlinx.coroutines.flow.StateFlow
 import javax.inject.Inject
 
 data class SettingsUiState(
-    val retentionDays: Int     = 30,
-    val darkTheme:     Boolean = true,
-    val pinEnabled:    Boolean = false
+    val retentionDays:         Int     = 90,
+    val darkTheme:             Boolean = true,
+    val pinEnabled:            Boolean = false,
+    val onlineMetadataEnabled: Boolean = false,
+    val analysisWindowDays:    Int     = 90
 )
 
 @HiltViewModel
@@ -20,9 +22,11 @@ class SettingsViewModel @Inject constructor(
 
     private val _state = MutableStateFlow(
         SettingsUiState(
-            retentionDays = prefs.retentionDays,
-            darkTheme     = prefs.darkTheme,
-            pinEnabled    = prefs.pinEnabled
+            retentionDays         = prefs.retentionDays,
+            darkTheme             = prefs.darkTheme,
+            pinEnabled            = prefs.pinEnabled,
+            onlineMetadataEnabled = prefs.onlineMetadataEnabled,
+            analysisWindowDays    = prefs.analysisWindowDays
         )
     )
     val uiState: StateFlow<SettingsUiState> = _state
@@ -40,5 +44,15 @@ class SettingsViewModel @Inject constructor(
     fun setPin(pin: String?) {
         prefs.pinHash = pin
         _state.value = _state.value.copy(pinEnabled = pin != null)
+    }
+
+    fun setOnlineMetadata(enabled: Boolean) {
+        prefs.onlineMetadataEnabled = enabled
+        _state.value = _state.value.copy(onlineMetadataEnabled = enabled)
+    }
+
+    fun setAnalysisWindow(days: Int) {
+        prefs.analysisWindowDays = days
+        _state.value = _state.value.copy(analysisWindowDays = days)
     }
 }
