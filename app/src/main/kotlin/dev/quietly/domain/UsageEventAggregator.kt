@@ -1,6 +1,10 @@
 package dev.quietly.domain
 
-private const val DAY_MS = 86_400_000L
+import java.util.TimeZone
+
+// ---------------------------------------------------------------------------
+// DTOs
+// ---------------------------------------------------------------------------
 
 data class RawUsageEvent(
     val packageName: String,
@@ -10,21 +14,50 @@ data class RawUsageEvent(
 
 data class DailyAppUsage(
     val packageName: String,
-    val epochDay: Long,
+    val epochDay: Long,   // local-time epoch day (midnight in device TZ)
     val totalMs: Long,
     val launches: Int
 )
 
+// ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
+
 private data class Session(val startMs: Long, var endMs: Long? = null)
-private data class PackageSessions(
-    val sessions: MutableList<Session> = mutableListOf()
-)
+
+private class PackageState {
+    val sessions = mutableListOf<Session>()
+    var launches = 0
+}
+
+// ---------------------------------------------------------------------------
+// Aggregator
+// ---------------------------------------------------------------------------
 
 object UsageEventAggregator {
-    const val EVENT_ACTIVITY_RESUMED = 1
-    const val EVENT_ACTIVITY_PAUSED = 2
-    const val EVENT_ACTIVITY_STOPPED = 3
 
+    // Android UsageEvents event type constants
+    const val EVENT_ACTIVITY_RESUMED = 1
+    const val EVENT_ACTIVITY_PAUSED  = 2
+    const val EVENT_ACTIVITY_STOPPED = 23
+
+    /**
+     * Aggregates raw usage events into per-app, per-local-day totals.
+     *
+     * Key fixes vs the previous implementation:
+     * 1. Day bucketing uses the DEVICE's local timezone, not UTC.
+     *    Without this, users east of UTC (e.g. UTC+4) see evening usage
+     *    attributed to the wrong day and filtered out.
+     * 2. Dangling sessions (app still open when query window ends) are closed
+     *    at [nowMs] instead of being silently dropped.
+     * 3. ACTIVITY_STOPPED is treated the same as ACTIVITY_PAUSED so sessions
+     *    are always closed even when the paused event is missing.
+     *
+     * @param events       Raw events from UsageStatsManager, in any order.
+     * @param fromEpochDay First local-day to include (inclusive), as local epoch day.
+     * @param toEpochDay   Last local-day to include (inclusive), as local epoch day.
+     * @param nowMs        Current wall-clock time; open sessions are closed here.
+     */
     fun aggregate(
         events: List<RawUsageEvent>,
         fromEpochDay: Long,
@@ -33,66 +66,92 @@ object UsageEventAggregator {
     ): List<DailyAppUsage> {
         if (events.isEmpty() || toEpochDay < fromEpochDay) return emptyList()
 
-        val fromMs = fromEpochDay * DAY_MS
-        val toMsExclusive = (toEpochDay + 1L) * DAY_MS
+        val tz = TimeZone.getDefault()
+        val tzOffsetMs = tz.getOffset(nowMs).toLong()
 
-        val sessionsByPackage = mutableMapOf<String, PackageSessions>()
-        val launchesByKey = mutableMapOf<Pair<String, Long>, Int>()
+        // Convert local epoch day to absolute ms boundaries
+        val dayMs = 86_400_000L
+        val fromMs = fromEpochDay * dayMs - tzOffsetMs
+        val toMsExclusive = (toEpochDay + 1L) * dayMs - tzOffsetMs
 
-        events.sortedBy { it.timestampMs }.forEach { event ->
-            val state = sessionsByPackage.getOrPut(event.packageName) { PackageSessions() }
-            when (event.eventType) {
+        // ------------------------------------------------------------------
+        // 1. Build session list per package from the event stream
+        // ------------------------------------------------------------------
+        val sorted = events.sortedBy { it.timestampMs }
+        val stateByPkg = mutableMapOf<String, PackageState>()
+
+        for (e in sorted) {
+            val state = stateByPkg.getOrPut(e.packageName) { PackageState() }
+            when (e.eventType) {
                 EVENT_ACTIVITY_RESUMED -> {
-                    state.sessions += Session(startMs = event.timestampMs)
-                    if (event.timestampMs >= fromMs && event.timestampMs < toMsExclusive) {
-                        val day = event.timestampMs / DAY_MS
-                        val key = event.packageName to day
-                        launchesByKey[key] = (launchesByKey[key] ?: 0) + 1
+                    state.sessions.add(Session(startMs = e.timestampMs))
+                    state.launches++
+                }
+                EVENT_ACTIVITY_PAUSED,
+                EVENT_ACTIVITY_STOPPED -> {
+                    // Close the most recent open session
+                    val open = state.sessions.lastOrNull { it.endMs == null }
+                    if (open != null && e.timestampMs >= open.startMs) {
+                        open.endMs = e.timestampMs
                     }
                 }
-                EVENT_ACTIVITY_PAUSED, EVENT_ACTIVITY_STOPPED -> {
-                    val open = state.sessions.lastOrNull { it.endMs == null } ?: return@forEach
-                    open.endMs = maxOf(event.timestampMs, open.startMs)
-                }
             }
         }
 
-        sessionsByPackage.values.forEach { pkg ->
-            pkg.sessions.forEach { session ->
-                if (session.endMs == null) {
-                    session.endMs = maxOf(nowMs, session.startMs)
-                }
-            }
+        // ------------------------------------------------------------------
+        // 2. Close any session still open at nowMs (app is in the foreground)
+        // ------------------------------------------------------------------
+        for (state in stateByPkg.values) {
+            state.sessions
+                .filter { it.endMs == null }
+                .forEach { it.endMs = nowMs }
         }
 
+        // ------------------------------------------------------------------
+        // 3. Bucket session durations into local-timezone days
+        // ------------------------------------------------------------------
         val totalsByKey = mutableMapOf<Pair<String, Long>, Long>()
-        sessionsByPackage.forEach { (packageName, state) ->
-            state.sessions.forEach { session ->
-                val endMs = session.endMs ?: return@forEach
-                var clampedStart = maxOf(session.startMs, fromMs)
-                val clampedEnd = minOf(endMs, toMsExclusive)
-                if (clampedEnd <= clampedStart) return@forEach
 
-                while (clampedStart < clampedEnd) {
-                    val day = clampedStart / DAY_MS
-                    val dayEnd = minOf((day + 1L) * DAY_MS, clampedEnd)
-                    val key = packageName to day
-                    totalsByKey[key] = (totalsByKey[key] ?: 0L) + (dayEnd - clampedStart)
-                    clampedStart = dayEnd
+        stateByPkg.forEach { (pkg, state) ->
+            for (session in state.sessions) {
+                val rawEnd = session.endMs ?: continue
+                if (rawEnd <= session.startMs) continue
+
+                // Clamp to the requested window
+                val clampedStart = maxOf(session.startMs, fromMs)
+                val clampedEnd   = minOf(rawEnd, toMsExclusive)
+                if (clampedEnd <= clampedStart) continue
+
+                // Walk through each calendar day covered by this session
+                var cursor = clampedStart
+                while (cursor < clampedEnd) {
+                    // Convert cursor to a local-time epoch day
+                    val localMs  = cursor + tzOffsetMs
+                    val localDay = localMs / dayMs
+
+                    // End of this calendar day in absolute ms
+                    val nextDayAbsMs = (localDay + 1L) * dayMs - tzOffsetMs
+                    val segEnd = minOf(nextDayAbsMs, clampedEnd)
+
+                    val key = pkg to localDay
+                    totalsByKey[key] = (totalsByKey[key] ?: 0L) + (segEnd - cursor)
+                    cursor = segEnd
                 }
             }
         }
 
-        return totalsByKey.entries
+        // ------------------------------------------------------------------
+        // 4. Filter to requested day range and materialise results
+        // ------------------------------------------------------------------
+        return totalsByKey
+            .filter { (key, _) -> key.second in fromEpochDay..toEpochDay }
             .map { (key, totalMs) ->
                 DailyAppUsage(
                     packageName = key.first,
-                    epochDay = key.second,
-                    totalMs = totalMs,
-                    launches = launchesByKey[key] ?: 0
+                    epochDay    = key.second,
+                    totalMs     = totalMs,
+                    launches    = stateByPkg[key.first]?.launches ?: 0
                 )
             }
-            .filter { it.totalMs > 0L }
-            .sortedWith(compareByDescending<DailyAppUsage> { it.epochDay }.thenByDescending { it.totalMs })
     }
 }
