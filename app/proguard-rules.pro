@@ -1,12 +1,20 @@
-# Keep Hilt generated components
+# Quietly ProGuard rules
+
+# Keep Hilt-generated components
 -keep class dagger.hilt.** { *; }
--keep class javax.inject.** { *; }
+-keep @dagger.hilt.android.HiltAndroidApp class * { *; }
+-keep @dagger.hilt.InstallIn class * { *; }
 
-# Keep Room entities
--keep @androidx.room.Entity class * { *; }
+# Keep Room entities and DAOs
+-keep class dev.quietly.data.db.entity.** { *; }
+-keep class dev.quietly.data.db.dao.** { *; }
 
-# Kotlin serialisation
--keepattributes *Annotation*
--keepclassmembers class * {
-    @com.google.gson.annotations.SerializedName <fields>;
-}
+# Keep WorkManager workers
+-keep class dev.quietly.worker.** { *; }
+
+# Kotlin serialization
+-keepattributes *Annotation*, InnerClasses
+-dontnote kotlinx.serialization.AnnotationsKt
+
+# Suppress warnings for missing classes in debug-only libs
+-dontwarn org.jetbrains.annotations.**
