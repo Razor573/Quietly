@@ -1,18 +1,26 @@
 package dev.quietly.ui.insights
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
+import dev.quietly.domain.ImportanceEngine.ImportanceLabel
+import dev.quietly.domain.ImportanceEngine.RecommendationType
+import dev.quietly.domain.ImportanceEngine.ScoredApp
 import dev.quietly.ui.components.BottomNavBar
 import dev.quietly.util.toHoursMinutes
 
@@ -23,110 +31,402 @@ fun InsightsScreen(
     vm: InsightsViewModel = hiltViewModel()
 ) {
     val s by vm.uiState.collectAsState()
+    var overrideTarget by remember { mutableStateOf<ScoredApp?>(null) }
 
     Scaffold(
-        topBar    = { TopAppBar(title = { Text("Insights") }) },
+        topBar = {
+            TopAppBar(
+                title = { Text("Insights") },
+                actions = {
+                    Text(
+                        "${s.analysisWindowDays}-day window",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(end = 16.dp)
+                    )
+                }
+            )
+        },
         bottomBar = { BottomNavBar(navController) }
     ) { pad ->
+
         if (s.isLoading) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
             }
             return@Scaffold
         }
+
+        if (s.rankedApps.isEmpty()) {
+            EmptyInsightsState(pad)
+            return@Scaffold
+        }
+
         LazyColumn(
             contentPadding = PaddingValues(
-                top = pad.calculateTopPadding() + 8.dp,
+                top    = pad.calculateTopPadding() + 8.dp,
                 bottom = pad.calculateBottomPadding() + 16.dp,
-                start = 16.dp, end = 16.dp
+                start  = 16.dp,
+                end    = 16.dp
             ),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // ── Category donut-style breakdown ────────────────────────────
+
+            // ── Category breakdown ───────────────────────────────────────────────
             if (s.categoryBreakdown.isNotEmpty()) {
+                item { CategoryBreakdownCard(breakdown = s.categoryBreakdown) }
+            }
+
+            // ── Remove candidates ────────────────────────────────────────────────
+            if (s.removeList.isNotEmpty()) {
                 item {
-                    CategoryBreakdownCard(breakdown = s.categoryBreakdown)
+                    SectionHeader(
+                        title    = "🗑️ Remove candidates",
+                        subtitle = "${s.removeList.size} app(s) with low importance and low recency.",
+                        tint     = MaterialTheme.colorScheme.error
+                    )
+                }
+                items(s.removeList) { app ->
+                    ScoredAppCard(
+                        app       = app,
+                        onOverride = { overrideTarget = app }
+                    )
                 }
             }
 
-            // ── Suggest remove ────────────────────────────────────────────
-            if (s.suggestedRemove.isNotEmpty()) {
+            // ── Limit candidates ─────────────────────────────────────────────────
+            if (s.limitList.isNotEmpty()) {
                 item {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.errorContainer
-                        )
-                    ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Text("Consider removing",
-                                style = MaterialTheme.typography.titleMedium,
-                                color = MaterialTheme.colorScheme.onErrorContainer)
-                            Text(
-                                "These apps average more than 2 h/day over the last 30 days.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.7f)
-                            )
-                            Spacer(Modifier.height(8.dp))
-                            s.suggestedRemove.forEach { app ->
-                                Text(
-                                    "• ${app.appLabel} — ${app.avgDailyMs.toHoursMinutes()} avg/day",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onErrorContainer
-                                )
-                            }
-                        }
-                    }
+                    SectionHeader(
+                        title    = "⏱ Limit candidates",
+                        subtitle = "${s.limitList.size} app(s) are high-usage or distraction-prone.",
+                        tint     = MaterialTheme.colorScheme.tertiary
+                    )
+                }
+                items(s.limitList) { app ->
+                    ScoredAppCard(
+                        app       = app,
+                        onOverride = { overrideTarget = app }
+                    )
                 }
             }
 
-            // ── Top 10 apps (30-day avg) ──────────────────────────────────
+            // ── Protected apps ──────────────────────────────────────────────────
+            if (s.protectedList.isNotEmpty()) {
+                item {
+                    SectionHeader(
+                        title    = "🛡️ Protected apps",
+                        subtitle = "${s.protectedList.size} app(s) are essential or manually protected.",
+                        tint     = MaterialTheme.colorScheme.primary
+                    )
+                }
+                items(s.protectedList) { app ->
+                    ScoredAppCard(
+                        app        = app,
+                        onOverride = { overrideTarget = app }
+                    )
+                }
+            }
+
+            // ── Full ranked list ───────────────────────────────────────────────────
             item {
-                Text("Top apps — 30-day average",
-                    style = MaterialTheme.typography.titleSmall)
+                SectionHeader(
+                    title    = "📊 All apps — ranked by importance",
+                    subtitle = "90-day analysis window. Tap any app to set an override."
+                )
             }
-            val maxMs = s.topApps.maxOfOrNull { it.avgDailyMs }?.coerceAtLeast(1L) ?: 1L
-            items(s.topApps) { app ->
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(app.appLabel, style = MaterialTheme.typography.bodyMedium)
-                        Text(app.category, style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
-                    }
-                    Column(horizontalAlignment = Alignment.End) {
-                        Text(app.avgDailyMs.toHoursMinutes(),
-                            style = MaterialTheme.typography.labelLarge)
-                        val frac = (app.avgDailyMs.toFloat() / maxMs).coerceIn(0f, 1f)
-                        Box(
-                            modifier = Modifier
-                                .width(80.dp).height(4.dp)
-                                .clip(RoundedCornerShape(2.dp))
-                                .background(MaterialTheme.colorScheme.surfaceVariant)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxHeight()
-                                    .fillMaxWidth(frac)
-                                    .clip(RoundedCornerShape(2.dp))
-                                    .background(MaterialTheme.colorScheme.primary)
-                            )
-                        }
-                    }
+            items(s.rankedApps) { app ->
+                ScoredAppCard(
+                    app        = app,
+                    onOverride = { overrideTarget = app }
+                )
+            }
+        }
+    }
+
+    // ── Per-app override bottom sheet ──────────────────────────────────────────
+    overrideTarget?.let { target ->
+        AppOverrideSheet(
+            app        = target,
+            onDismiss  = { overrideTarget = null },
+            onSetOverride = { type ->
+                vm.setOverride(target.packageName, type)
+                overrideTarget = null
+            },
+            onClearOverride = {
+                vm.clearOverride(target.packageName)
+                overrideTarget = null
+            }
+        )
+    }
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+//  Sub-composables
+// ───────────────────────────────────────────────────────────────────────────
+
+@Composable
+private fun SectionHeader(
+    title:    String,
+    subtitle: String,
+    tint:     Color = MaterialTheme.colorScheme.onSurface
+) {
+    Column(modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)) {
+        Text(title, style = MaterialTheme.typography.titleSmall,
+            color = tint, fontWeight = FontWeight.SemiBold)
+        Text(subtitle, style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun ScoredAppCard(
+    app:        ScoredApp,
+    onOverride: () -> Unit
+) {
+    val labelColor = when (app.label) {
+        ImportanceLabel.ESSENTIAL        -> MaterialTheme.colorScheme.primary
+        ImportanceLabel.USEFUL           -> MaterialTheme.colorScheme.secondary
+        ImportanceLabel.OPTIONAL         -> MaterialTheme.colorScheme.tertiary
+        ImportanceLabel.REMOVE_CANDIDATE -> MaterialTheme.colorScheme.error
+    }
+    val labelText = when (app.label) {
+        ImportanceLabel.ESSENTIAL        -> "Essential"
+        ImportanceLabel.USEFUL           -> "Useful"
+        ImportanceLabel.OPTIONAL         -> "Optional"
+        ImportanceLabel.REMOVE_CANDIDATE -> "Low value"
+    }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onOverride),
+        shape  = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(app.appLabel,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium)
+                    Text(app.category,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                Divider(modifier = Modifier.padding(top = 8.dp),
-                    thickness = 0.5.dp,
-                    color = MaterialTheme.colorScheme.outlineVariant)
+                // Score badge
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(
+                        "${app.score}",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = labelColor
+                    )
+                    Text(
+                        labelText,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = labelColor
+                    )
+                }
+            }
+
+            // Score bar
+            Spacer(Modifier.height(6.dp))
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(4.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .fillMaxWidth(app.score / 100f)
+                        .clip(RoundedCornerShape(2.dp))
+                        .background(labelColor)
+                )
+            }
+
+            // Reason string
+            if (app.reason.isNotBlank()) {
+                Spacer(Modifier.height(8.dp))
+                Surface(
+                    shape  = RoundedCornerShape(6.dp),
+                    color  = MaterialTheme.colorScheme.surface,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        app.reason,
+                        style    = MaterialTheme.typography.labelSmall,
+                        color    = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+            }
+
+            // Stats row
+            Spacer(Modifier.height(6.dp))
+            Row(
+                modifier              = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    "${app.activeDays} active days",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    if (app.lastSeenDaysAgo == 0) "Seen today"
+                    else "Last seen ${app.lastSeenDaysAgo}d ago",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    app.totalTimeMs.toHoursMinutes() + " total",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            // Protection badge
+            if (app.isProtected) {
+                Spacer(Modifier.height(4.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Outlined.Shield,
+                        contentDescription = "Protected",
+                        tint   = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(12.dp)
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        "Protected — excluded from removal",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AppOverrideSheet(
+    app:            ScoredApp,
+    onDismiss:      () -> Unit,
+    onSetOverride:  (String) -> Unit,
+    onClearOverride: () -> Unit
+) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 24.dp, end = 24.dp, bottom = 32.dp)
+        ) {
+            Text(
+                "Override: ${app.appLabel}",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                "Your override changes how Quietly scores and recommends this app.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp, bottom = 16.dp)
+            )
+            OverrideOption("🛡️ Mark as Essential",
+                "Protected — never suggested for removal.") {
+                onSetOverride("ESSENTIAL")
+            }
+            OverrideOption("💧 Mark as Focus Drain",
+                "Treated as a distraction — usage limit suggested.") {
+                onSetOverride("FOCUS_DRAIN")
+            }
+            OverrideOption("👀 Ignore",
+                "Kept in score list but excluded from suggestions.") {
+                onSetOverride("IGNORE")
+            }
+            OverrideOption("❌ Exclude from suggestions",
+                "Never shown in Remove or Limit lists.") {
+                onSetOverride("EXCLUDE_SUGGESTIONS")
+            }
+            Spacer(Modifier.height(8.dp))
+            OutlinedButton(
+                onClick  = onClearOverride,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Clear override (use automatic scoring)")
             }
         }
     }
 }
 
 @Composable
+private fun OverrideOption(
+    title:    String,
+    subtitle: String,
+    onClick:  () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+            .clickable(onClick = onClick),
+        shape  = RoundedCornerShape(8.dp),
+        color  = MaterialTheme.colorScheme.surfaceVariant
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text(title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+            Text(subtitle, style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+private fun EmptyInsightsState(pad: PaddingValues) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(pad)
+            .padding(32.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Icon(
+                Icons.Outlined.BarChart,
+                contentDescription = null,
+                modifier = Modifier.size(64.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(16.dp))
+            Text(
+                "Not enough data yet",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "Quietly needs a few days of usage to generate insights. Check back soon.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+            )
+        }
+    }
+}
+
+@Composable
 private fun CategoryBreakdownCard(breakdown: Map<String, Long>) {
-    val total = breakdown.values.sum().coerceAtLeast(1L)
+    val total  = breakdown.values.sum().coerceAtLeast(1L)
     val colors = listOf(
         MaterialTheme.colorScheme.primary,
         MaterialTheme.colorScheme.secondary,
@@ -136,9 +436,15 @@ private fun CategoryBreakdownCard(breakdown: Map<String, Long>) {
     )
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Text("By category", style = MaterialTheme.typography.titleSmall)
+            Text("By category — 90-day window",
+                style = MaterialTheme.typography.titleSmall)
             Spacer(Modifier.height(8.dp))
-            Row(modifier = Modifier.fillMaxWidth().height(12.dp).clip(RoundedCornerShape(6.dp))) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(12.dp)
+                    .clip(RoundedCornerShape(6.dp))
+            ) {
                 breakdown.entries.sortedByDescending { it.value }
                     .forEachIndexed { i, (_, ms) ->
                         val frac = ms.toFloat() / total
@@ -154,11 +460,16 @@ private fun CategoryBreakdownCard(breakdown: Map<String, Long>) {
             breakdown.entries.sortedByDescending { it.value }.forEachIndexed { i, (cat, ms) ->
                 val pct = (ms * 100f / total).toInt()
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(8.dp).clip(RoundedCornerShape(2.dp))
-                        .background(colors.getOrElse(i) { colors.last() }))
+                    Box(
+                        Modifier.size(8.dp).clip(RoundedCornerShape(2.dp))
+                            .background(colors.getOrElse(i) { colors.last() })
+                    )
                     Spacer(Modifier.width(6.dp))
-                    Text("$cat ($pct%)", style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+                    Text(
+                        "$cat ($pct%)",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                    )
                 }
             }
         }

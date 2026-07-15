@@ -19,14 +19,57 @@ interface AppUsageDao {
 
     /** Aggregate across a date range (weekly/monthly charts). */
     @Query("""
-        SELECT packageName, MIN(dateEpochDay) AS dateEpochDay, appLabel,
-               SUM(totalTimeMs) AS totalTimeMs, SUM(launchCount) AS launchCount, category
+        SELECT packageName,
+               MIN(dateEpochDay) AS dateEpochDay,
+               appLabel,
+               SUM(totalTimeMs) AS totalTimeMs,
+               SUM(launchCount) AS launchCount,
+               category,
+               MAX(lastSeenEpochDay) AS lastSeenEpochDay
         FROM app_usage
         WHERE dateEpochDay BETWEEN :fromDay AND :toDay
         GROUP BY packageName
         ORDER BY totalTimeMs DESC
     """)
     suspend fun queryRange(fromDay: Int, toDay: Int): List<AppUsageEntity>
+
+    /**
+     * 90-day aggregation used by the importance engine.
+     * Returns one row per package with summed totals and max lastSeenEpochDay.
+     */
+    @Query("""
+        SELECT packageName,
+               MIN(dateEpochDay) AS dateEpochDay,
+               appLabel,
+               SUM(totalTimeMs) AS totalTimeMs,
+               SUM(launchCount) AS launchCount,
+               category,
+               MAX(lastSeenEpochDay) AS lastSeenEpochDay
+        FROM app_usage
+        WHERE dateEpochDay BETWEEN :fromDay AND :toDay
+        GROUP BY packageName
+        ORDER BY totalTimeMs DESC
+    """)
+    suspend fun queryRangeAggregated(fromDay: Int, toDay: Int): List<AppUsageEntity>
+
+    /**
+     * Per-day rows for a package across the 90-day window (used for active-day count).
+     */
+    @Query("""
+        SELECT * FROM app_usage
+        WHERE packageName = :pkg
+          AND dateEpochDay BETWEEN :fromDay AND :toDay
+        ORDER BY dateEpochDay ASC
+    """)
+    suspend fun perDayRowsForPackage(pkg: String, fromDay: Int, toDay: Int): List<AppUsageEntity>
+
+    /** All per-day rows across the 90-day window for every package (importance engine). */
+    @Query("""
+        SELECT * FROM app_usage
+        WHERE dateEpochDay BETWEEN :fromDay AND :toDay
+        ORDER BY packageName, dateEpochDay ASC
+    """)
+    suspend fun allPerDayRows(fromDay: Int, toDay: Int): List<AppUsageEntity>
 
     /** Per-day totals for chart bar series (last N days). */
     @Query("""

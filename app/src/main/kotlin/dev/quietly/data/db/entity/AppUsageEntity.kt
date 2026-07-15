@@ -13,10 +13,12 @@ import androidx.room.Index
     indices = [Index(value = ["dateEpochDay"])]
 )
 data class AppUsageEntity(
-    val packageName: String,
-    val dateEpochDay: Int,          // LocalDate.toEpochDay()
-    val appLabel:     String,
-    val totalTimeMs:  Long,
-    val launchCount:  Int  = 0,
-    val category:     String = "Other"   // NEW: app category
+    val packageName:     String,
+    val dateEpochDay:    Int,          // LocalDate.toEpochDay()
+    val appLabel:        String,
+    val totalTimeMs:     Long,
+    val launchCount:     Int    = 0,
+    val category:        String = "Other",
+    /** Epoch day of the most recent session seen for this package (updated on each sync). */
+    val lastSeenEpochDay: Int   = dateEpochDay
 )
