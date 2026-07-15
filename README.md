@@ -17,7 +17,7 @@ Quietly is not a screen-time tracker. It is an **app-importance assistant** — 
 | **Split recommendations** | **Remove** (low importance, low recency) and **Limit** (high usage, distraction-prone) are separate lists — never conflated |
 | **Reason strings** | Every recommendation includes a plain-English explanation: *"Unused for 68 days; category: Games; low importance."* |
 | **Per-app overrides** | Mark any app as Essential, Focus Drain, Ignore, or Exclude — the engine adapts |
-| **Usage dashboard** | See every app’s screen time for today, this week, or this month |
+| **Usage dashboard** | See every app's screen time for today, this week, or this month |
 | **Per-app goals** | Set a daily time limit; get a local notification at 90 % |
 | **Encrypted storage** | Room DB (v4) + Android Keystore-backed `EncryptedSharedPreferences` (AES-256-GCM) |
 | **No network by default** | `INTERNET` permission is **not requested** for core features; online metadata is strictly opt-in |
@@ -83,7 +83,7 @@ Install the APK from `app/build/outputs/apk/debug/app-debug.apk`, then:
 
 1. Open Quietly
 2. Tap **Grant Usage Access** and enable it in Settings
-3. Tap **I’ve granted it — continue**
+3. Tap **I've granted it — continue**
 4. After a few days of data collection, open **Insights** for scored recommendations
 
 ---
@@ -109,10 +109,16 @@ Install the APK from `app/build/outputs/apk/debug/app-debug.apk`, then:
 
 ---
 
-## CI
+## CI / CD
 
-GitHub Actions builds the debug APK and runs unit tests on every push to `main`.
-Artifact is uploaded and retained for 14 days.
+GitHub Actions (`ci.yml`) runs on every push to `main`:
+
+1. Runs unit tests first (`testDebugUnitTest`)
+2. Builds the debug APK (`assembleDebug`)
+3. Uploads the APK as a workflow artifact (retained 30 days)
+4. Creates a versioned GitHub Release with the APK attached
+
+Release tags follow the pattern `v{versionName}-build.{run_number}-{short_sha}` to guarantee uniqueness.
 
 ---
 
