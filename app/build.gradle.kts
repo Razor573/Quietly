@@ -33,6 +33,12 @@ android {
     kotlinOptions { jvmTarget = "17" }
 
     buildFeatures { compose = true }
+
+    packaging {
+        resources {
+            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        }
+    }
 }
 
 dependencies {
@@ -70,6 +76,9 @@ dependencies {
 
     // Vico Charts
     implementation(libs.vico.compose.m3)
+
+    // AppCompat (needed for Theme.AppCompat base theme)
+    implementation("androidx.appcompat:appcompat:1.7.0")
 
     // Testing
     testImplementation(libs.junit)
