@@ -11,7 +11,7 @@ jobs:
     name: Build debug APK
     runs-on: ubuntu-latest
     permissions:
-      contents: write      # needed to create a GitHub Release
+      contents: write
 
     steps:
       - name: Checkout
@@ -23,25 +23,19 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Cache Gradle
-        uses: actions/cache@v4
+      # setup-gradle downloads and caches Gradle itself — no wrapper jar needed
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
         with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
-          restore-keys: gradle-${{ runner.os }}-
-
-      - name: Make gradlew executable
-        run: chmod +x gradlew
+          gradle-version: '8.9'
+          cache-read-only: false
 
       - name: Build debug APK
-        run: ./gradlew :app:assembleDebug --no-daemon --no-configuration-cache
+        run: gradle :app:assembleDebug --no-daemon --no-configuration-cache
 
       - name: Run unit tests
-        run: ./gradlew :app:testDebugUnitTest --no-daemon --no-configuration-cache
+        run: gradle :app:testDebugUnitTest --no-daemon --no-configuration-cache
 
-      # Keep APK as workflow artifact (14-day temp download)
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
@@ -49,7 +43,6 @@ jobs:
           path: app/build/outputs/apk/debug/app-debug.apk
           retention-days: 14
 
-      # Only publish a release on direct pushes to main (not on PRs)
       - name: Create GitHub Release
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
