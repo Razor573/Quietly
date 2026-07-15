@@ -1,5 +1,6 @@
 package dev.quietly.ui.components
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -8,65 +9,57 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import dev.quietly.data.db.entity.AppUsageEntity
 import dev.quietly.data.db.entity.GoalEntity
-import dev.quietly.util.toHoursMinutesDisplay
+import dev.quietly.util.toHoursMinutes
 
 @Composable
 fun AppUsageRow(
-    usage        : AppUsageEntity,
-    goal         : GoalEntity? = null,
-    showLaunches : Boolean     = false
+    usage:   AppUsageEntity,
+    goal:    GoalEntity? = null,
+    onClick: (() -> Unit)? = null
 ) {
-    val overLimit = goal != null && usage.totalTimeMs > goal.dailyLimitMs
+    val progress = goal?.let {
+        (usage.totalTimeMs.toFloat() / it.dailyLimitMs.toFloat()).coerceIn(0f, 1f)
+    }
+    val progressColor = when {
+        progress == null -> MaterialTheme.colorScheme.primary
+        progress >= 1f   -> MaterialTheme.colorScheme.error
+        progress >= 0.8f -> MaterialTheme.colorScheme.tertiary
+        else             -> MaterialTheme.colorScheme.primary
+    }
 
     Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors   = CardDefaults.cardColors(
-            containerColor = if (overLimit)
-                MaterialTheme.colorScheme.errorContainer
-            else
-                MaterialTheme.colorScheme.surface
-        )
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier)
     ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Row(
-                modifier              = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment     = Alignment.CenterVertically
-            ) {
-                // App name + optional launch count
+        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(modifier = Modifier.weight(1f)) {
+                    Text(usage.appLabel, style = MaterialTheme.typography.bodyLarge)
                     Text(
-                        text  = usage.appLabel,
-                        style = MaterialTheme.typography.titleMedium
+                        "${usage.launchCount} opens · ${usage.category}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)
                     )
-                    if (showLaunches) {
-                        Text(
-                            text  = "${usage.launchCount} open${if (usage.launchCount != 1) "s" else ""}",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)
-                        )
-                    }
                 }
-                Text(
-                    text  = usage.totalTimeMs.toHoursMinutesDisplay(),
-                    style = MaterialTheme.typography.bodyMedium
-                )
+                Text(usage.totalTimeMs.toHoursMinutes(),
+                    style = MaterialTheme.typography.labelLarge)
             }
-
-            if (goal != null) {
+            if (progress != null) {
                 Spacer(Modifier.height(6.dp))
                 LinearProgressIndicator(
-                    progress = { (usage.totalTimeMs.toFloat() / goal.dailyLimitMs).coerceIn(0f, 1f) },
-                    modifier = Modifier.fillMaxWidth(),
-                    color    = if (overLimit) MaterialTheme.colorScheme.error
-                               else MaterialTheme.colorScheme.primary
+                    progress        = { progress },
+                    modifier        = Modifier.fillMaxWidth().height(4.dp),
+                    color           = progressColor,
+                    trackColor      = MaterialTheme.colorScheme.surfaceVariant
                 )
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    text  = "Limit: ${goal.dailyLimitMs.toHoursMinutesDisplay()}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                )
+                if (progress >= 1f) {
+                    Text(
+                        "Goal exceeded!",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
             }
         }
     }

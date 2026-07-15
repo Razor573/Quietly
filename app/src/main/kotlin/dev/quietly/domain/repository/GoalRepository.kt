@@ -5,8 +5,7 @@ import kotlinx.coroutines.flow.Flow
 
 interface GoalRepository {
     fun observeAll(): Flow<List<GoalEntity>>
+    suspend fun getByPackage(pkg: String): GoalEntity?
     suspend fun upsert(goal: GoalEntity)
     suspend fun delete(goal: GoalEntity)
-    suspend fun forPackage(pkg: String): GoalEntity?
-    suspend fun activeGoals(): List<GoalEntity>
 }

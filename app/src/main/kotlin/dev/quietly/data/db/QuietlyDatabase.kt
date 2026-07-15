@@ -8,11 +8,11 @@ import dev.quietly.data.db.entity.AppUsageEntity
 import dev.quietly.data.db.entity.GoalEntity
 
 @Database(
-    entities = [AppUsageEntity::class, GoalEntity::class],
-    version  = 1,
+    entities  = [AppUsageEntity::class, GoalEntity::class],
+    version   = 3,   // bumped: category + reminderEnabled columns
     exportSchema = false
 )
 abstract class QuietlyDatabase : RoomDatabase() {
     abstract fun appUsageDao(): AppUsageDao
-    abstract fun goalDao(): GoalDao
+    abstract fun goalDao():     GoalDao
 }

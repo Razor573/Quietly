@@ -11,54 +11,65 @@ import kotlinx.coroutines.launch
 import java.time.LocalDate
 import javax.inject.Inject
 
-enum class AppSortOrder { TIME_DESC, TIME_ASC, LAUNCHES_DESC, NAME_ASC }
+enum class AppSort { TIME_DESC, TIME_ASC, LAUNCHES, NAME }
 
 data class AppsUiState(
-    val isLoading : Boolean              = true,
-    val apps      : List<AppUsageEntity> = emptyList(),
-    val sortOrder : AppSortOrder         = AppSortOrder.TIME_DESC,
-    val searchQuery: String              = ""
+    val apps:          List<AppUsageEntity> = emptyList(),
+    val filtered:      List<AppUsageEntity> = emptyList(),
+    val query:         String               = "",
+    val sort:          AppSort              = AppSort.TIME_DESC,
+    val totalApps:     Int                  = 0,
+    val totalOpens:    Int                  = 0,
+    val totalTimeMs:   Long                 = 0L,
+    val isLoading:     Boolean              = true
 )
 
 @HiltViewModel
 class AppsViewModel @Inject constructor(
-    private val usageRepo  : UsageRepository,
-    private val usageSource: UsageStatsSource
+    private val usageRepo: UsageRepository
 ) : ViewModel() {
 
-    private val today = LocalDate.now().toEpochDay()
+    private val _state = MutableStateFlow(AppsUiState())
+    val uiState: StateFlow<AppsUiState> = _state.asStateFlow()
 
-    private val _sortOrder  = MutableStateFlow(AppSortOrder.TIME_DESC)
-    private val _searchQuery = MutableStateFlow("")
-
-    val uiState: StateFlow<AppsUiState> =
-        combine(
-            usageRepo.observeDay(today),
-            _sortOrder,
-            _searchQuery
-        ) { apps, sort, query ->
-            val filtered = if (query.isBlank()) apps
-                           else apps.filter { it.appLabel.contains(query, ignoreCase = true) }
-            val sorted = when (sort) {
-                AppSortOrder.TIME_DESC    -> filtered.sortedByDescending { it.totalTimeMs }
-                AppSortOrder.TIME_ASC     -> filtered.sortedBy { it.totalTimeMs }
-                AppSortOrder.LAUNCHES_DESC -> filtered.sortedByDescending { it.launchCount }
-                AppSortOrder.NAME_ASC     -> filtered.sortedBy { it.appLabel.lowercase() }
+    init {
+        val today = LocalDate.now().toEpochDay().toInt()
+        viewModelScope.launch {
+            usageRepo.syncToday()
+            usageRepo.observeDay(today).collect { apps ->
+                _state.update { s ->
+                    val sorted = sort(apps, s.sort)
+                    val filtered = filter(sorted, s.query)
+                    s.copy(
+                        apps        = sorted,
+                        filtered    = filtered,
+                        totalApps   = apps.size,
+                        totalOpens  = apps.sumOf { it.launchCount },
+                        totalTimeMs = apps.sumOf { it.totalTimeMs },
+                        isLoading   = false
+                    )
+                }
             }
-            AppsUiState(
-                isLoading  = false,
-                apps       = sorted,
-                sortOrder  = sort,
-                searchQuery = query
-            )
-        }.stateIn(
-            scope        = viewModelScope,
-            started      = SharingStarted.WhileSubscribed(5_000),
-            initialValue = AppsUiState()
-        )
+        }
+    }
 
-    init { viewModelScope.launch { usageRepo.syncToday() } }
+    fun setQuery(q: String) = _state.update { s ->
+        s.copy(query = q, filtered = filter(s.apps, q))
+    }
 
-    fun setSortOrder(order: AppSortOrder) { _sortOrder.value = order }
-    fun setSearchQuery(q: String)         { _searchQuery.value = q }
+    fun setSort(sort: AppSort) = _state.update { s ->
+        val sorted   = sort(s.apps, sort)
+        s.copy(sort = sort, apps = sorted, filtered = filter(sorted, s.query))
+    }
+
+    private fun sort(list: List<AppUsageEntity>, sort: AppSort) = when (sort) {
+        AppSort.TIME_DESC -> list.sortedByDescending { it.totalTimeMs }
+        AppSort.TIME_ASC  -> list.sortedBy { it.totalTimeMs }
+        AppSort.LAUNCHES  -> list.sortedByDescending { it.launchCount }
+        AppSort.NAME      -> list.sortedBy { it.appLabel.lowercase() }
+    }
+
+    private fun filter(list: List<AppUsageEntity>, q: String) =
+        if (q.isBlank()) list
+        else list.filter { it.appLabel.contains(q, ignoreCase = true) }
 }

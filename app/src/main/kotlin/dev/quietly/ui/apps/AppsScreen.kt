@@ -14,7 +14,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import dev.quietly.ui.components.AppUsageRow
 import dev.quietly.ui.components.BottomNavBar
-import dev.quietly.util.toHoursMinutesDisplay
+import dev.quietly.ui.navigation.Screen
+import dev.quietly.util.toHoursMinutes
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -22,164 +23,113 @@ fun AppsScreen(
     navController: NavController,
     vm: AppsViewModel = hiltViewModel()
 ) {
-    val state by vm.uiState.collectAsState()
-    var showSortMenu by remember { mutableStateOf(false) }
+    val s by vm.uiState.collectAsState()
+    var sortExpanded by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
-            Column {
-                TopAppBar(
-                    title = { Text("All Apps") },
-                    actions = {
-                        // Sort menu
-                        Box {
-                            IconButton(onClick = { showSortMenu = true }) {
-                                Icon(Icons.Outlined.Sort, contentDescription = "Sort")
-                            }
-                            DropdownMenu(
-                                expanded = showSortMenu,
-                                onDismissRequest = { showSortMenu = false }
-                            ) {
-                                DropdownMenuItem(
-                                    text = { Text("Time ↓") },
-                                    onClick = { vm.setSortOrder(AppSortOrder.TIME_DESC); showSortMenu = false },
-                                    leadingIcon = {
-                                        if (state.sortOrder == AppSortOrder.TIME_DESC)
-                                            Icon(Icons.Outlined.Check, null)
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Time ↑") },
-                                    onClick = { vm.setSortOrder(AppSortOrder.TIME_ASC); showSortMenu = false },
-                                    leadingIcon = {
-                                        if (state.sortOrder == AppSortOrder.TIME_ASC)
-                                            Icon(Icons.Outlined.Check, null)
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Most Opens") },
-                                    onClick = { vm.setSortOrder(AppSortOrder.LAUNCHES_DESC); showSortMenu = false },
-                                    leadingIcon = {
-                                        if (state.sortOrder == AppSortOrder.LAUNCHES_DESC)
-                                            Icon(Icons.Outlined.Check, null)
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Name A–Z") },
-                                    onClick = { vm.setSortOrder(AppSortOrder.NAME_ASC); showSortMenu = false },
-                                    leadingIcon = {
-                                        if (state.sortOrder == AppSortOrder.NAME_ASC)
-                                            Icon(Icons.Outlined.Check, null)
-                                    }
-                                )
-                            }
+            TopAppBar(
+                title = { Text("All Apps") },
+                actions = {
+                    Box {
+                        IconButton(onClick = { sortExpanded = true }) {
+                            Icon(Icons.Outlined.Sort, "Sort")
+                        }
+                        DropdownMenu(
+                            expanded = sortExpanded,
+                            onDismissRequest = { sortExpanded = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Most time") },
+                                onClick = { vm.setSort(AppSort.TIME_DESC); sortExpanded = false }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Least time") },
+                                onClick = { vm.setSort(AppSort.TIME_ASC); sortExpanded = false }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Most opens") },
+                                onClick = { vm.setSort(AppSort.LAUNCHES); sortExpanded = false }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("A – Z") },
+                                onClick = { vm.setSort(AppSort.NAME); sortExpanded = false }
+                            )
                         }
                     }
-                )
-                // Search bar
-                OutlinedTextField(
-                    value         = state.searchQuery,
-                    onValueChange = { vm.setSearchQuery(it) },
-                    placeholder   = { Text("Search apps…") },
-                    singleLine    = true,
-                    leadingIcon   = { Icon(Icons.Outlined.Search, null) },
-                    trailingIcon  = {
-                        if (state.searchQuery.isNotBlank())
-                            IconButton(onClick = { vm.setSearchQuery("") }) {
-                                Icon(Icons.Outlined.Clear, contentDescription = "Clear")
-                            }
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 4.dp)
-                )
-            }
+                }
+            )
         },
         bottomBar = { BottomNavBar(navController) }
     ) { padding ->
-        if (state.isLoading) {
+        if (s.isLoading) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
-            }
-        } else if (state.apps.isEmpty()) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(
-                    text  = if (state.searchQuery.isBlank()) "No usage data yet\nOpen some apps and come back"
-                            else "No apps match \"${state.searchQuery}\"",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                )
             }
         } else {
             LazyColumn(
                 contentPadding = PaddingValues(
                     top    = padding.calculateTopPadding() + 8.dp,
                     bottom = padding.calculateBottomPadding() + 8.dp,
-                    start  = 16.dp,
-                    end    = 16.dp
+                    start = 16.dp, end = 16.dp
                 ),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                // Summary header
+                // ── Summary header ────────────────────────────────────────
                 item {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors   = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.secondaryContainer
-                        )
-                    ) {
+                    Card(modifier = Modifier.fillMaxWidth()) {
                         Row(
-                            modifier            = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween
+                            modifier = Modifier.padding(16.dp).fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceEvenly
                         ) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text(
-                                    text  = "${state.apps.size}",
-                                    style = MaterialTheme.typography.headlineSmall
-                                )
-                                Text(
-                                    text  = "Apps used",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
-                                )
-                            }
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text(
-                                    text  = state.apps.sumOf { it.launchCount }.toString(),
-                                    style = MaterialTheme.typography.headlineSmall
-                                )
-                                Text(
-                                    text  = "Total opens",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
-                                )
-                            }
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text(
-                                    text  = state.apps.sumOf { it.totalTimeMs }.toHoursMinutesDisplay(),
-                                    style = MaterialTheme.typography.headlineSmall
-                                )
-                                Text(
-                                    text  = "Total time",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
-                                )
-                            }
+                            StatChip(label = "Apps",  value = "${s.totalApps}")
+                            StatChip(label = "Opens", value = "${s.totalOpens}")
+                            StatChip(label = "Time",  value = s.totalTimeMs.toHoursMinutes())
                         }
                     }
                 }
-
-                // App rows with launch count shown
-                items(state.apps, key = { it.packageName }) { app ->
-                    AppUsageRow(
-                        usage         = app,
-                        goal          = null,
-                        showLaunches  = true
+                // ── Search bar ────────────────────────────────────────────
+                item {
+                    OutlinedTextField(
+                        value         = s.query,
+                        onValueChange = vm::setQuery,
+                        placeholder   = { Text("Search apps…") },
+                        leadingIcon   = { Icon(Icons.Outlined.Search, null) },
+                        modifier      = Modifier.fillMaxWidth(),
+                        singleLine    = true
                     )
+                }
+                // ── App list ──────────────────────────────────────────────
+                if (s.filtered.isEmpty()) {
+                    item {
+                        Box(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 40.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("No apps found", style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
+                        }
+                    }
+                } else {
+                    items(s.filtered, key = { it.packageName }) { usage ->
+                        AppUsageRow(
+                            usage   = usage,
+                            onClick = {
+                                navController.navigate(Screen.AppDetail.withArg(usage.packageName))
+                            }
+                        )
+                    }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun StatChip(label: String, value: String) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(value, style = MaterialTheme.typography.titleMedium)
+        Text(label, style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f))
     }
 }

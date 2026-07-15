@@ -7,39 +7,42 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface AppUsageDao {
 
-    @Upsert
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(entity: AppUsageEntity)
 
-    @Upsert
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertAll(entities: List<AppUsageEntity>)
 
-    /** Single day — for today’s live dashboard. */
-    @Query("SELECT * FROM app_usage WHERE dateEpochDay = :epochDay ORDER BY totalTimeMs DESC")
-    fun observeDay(epochDay: Long): Flow<List<AppUsageEntity>>
+    /** Live stream for a single day (Dashboard). */
+    @Query("SELECT * FROM app_usage WHERE dateEpochDay = :day ORDER BY totalTimeMs DESC")
+    fun observeDay(day: Int): Flow<List<AppUsageEntity>>
 
-    /** Date range — for weekly / monthly charts. */
+    /** Aggregate across a date range (weekly/monthly charts). */
     @Query("""
-        SELECT packageName, appLabel, SUM(totalTimeMs) AS totalTimeMs, SUM(launchCount) AS launchCount,
-               MAX(lastUsedMs) AS lastUsedMs, :fromDay AS dateEpochDay
+        SELECT packageName, MIN(dateEpochDay) AS dateEpochDay, appLabel,
+               SUM(totalTimeMs) AS totalTimeMs, SUM(launchCount) AS launchCount, category
         FROM app_usage
         WHERE dateEpochDay BETWEEN :fromDay AND :toDay
         GROUP BY packageName
         ORDER BY totalTimeMs DESC
     """)
-    fun observeRange(fromDay: Long, toDay: Long): Flow<List<AppUsageEntity>>
+    suspend fun queryRange(fromDay: Int, toDay: Int): List<AppUsageEntity>
 
-    /** Top N apps by total time in range — for insights. */
+    /** Per-day totals for chart bar series (last N days). */
     @Query("""
-        SELECT packageName, appLabel, SUM(totalTimeMs) AS totalTimeMs, SUM(launchCount) AS launchCount,
-               MAX(lastUsedMs) AS lastUsedMs, :fromDay AS dateEpochDay
+        SELECT dateEpochDay, SUM(totalTimeMs) AS totalTimeMs
         FROM app_usage
         WHERE dateEpochDay BETWEEN :fromDay AND :toDay
-        GROUP BY packageName
-        ORDER BY totalTimeMs DESC
-        LIMIT :limit
+        GROUP BY dateEpochDay
+        ORDER BY dateEpochDay ASC
     """)
-    suspend fun topApps(fromDay: Long, toDay: Long, limit: Int = 5): List<AppUsageEntity>
+    suspend fun dailyTotals(fromDay: Int, toDay: Int): List<DayTotal>
+
+    @Query("SELECT * FROM app_usage WHERE packageName = :pkg ORDER BY dateEpochDay DESC LIMIT :limit")
+    suspend fun historyForApp(pkg: String, limit: Int = 30): List<AppUsageEntity>
 
     @Query("DELETE FROM app_usage WHERE dateEpochDay < :beforeDay")
-    suspend fun purgeOlderThan(beforeDay: Long)
+    suspend fun purgeOlderThan(beforeDay: Int)
 }
+
+data class DayTotal(val dateEpochDay: Int, val totalTimeMs: Long)

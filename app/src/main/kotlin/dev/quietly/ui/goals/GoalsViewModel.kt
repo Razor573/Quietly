@@ -5,9 +5,7 @@ import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dev.quietly.data.db.entity.GoalEntity
 import dev.quietly.domain.repository.GoalRepository
-import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -15,21 +13,23 @@ import javax.inject.Inject
 class GoalsViewModel @Inject constructor(
     private val repo: GoalRepository
 ) : ViewModel() {
+    val goals: StateFlow<List<GoalEntity>> =
+        repo.observeAll().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val goals: StateFlow<List<GoalEntity>> = repo.observeAll()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
-
-    fun upsertGoal(packageName: String, dailyLimitMs: Long) {
+    fun addGoal(pkg: String, label: String, limitMs: Long, reminder: Boolean) {
         viewModelScope.launch {
-            val existing = repo.forPackage(packageName)
-            repo.upsert(
-                (existing ?: GoalEntity(packageName = packageName, dailyLimitMs = dailyLimitMs))
-                    .copy(dailyLimitMs = dailyLimitMs)
-            )
+            repo.upsert(GoalEntity(
+                packageName     = pkg,
+                appLabel        = label,
+                dailyLimitMs    = limitMs,
+                reminderEnabled = reminder
+            ))
         }
     }
 
-    fun delete(goal: GoalEntity) {
-        viewModelScope.launch { repo.delete(goal) }
+    fun delete(goal: GoalEntity) = viewModelScope.launch { repo.delete(goal) }
+
+    fun toggleReminder(goal: GoalEntity) = viewModelScope.launch {
+        repo.upsert(goal.copy(reminderEnabled = !goal.reminderEnabled))
     }
 }

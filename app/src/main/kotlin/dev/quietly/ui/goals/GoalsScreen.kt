@@ -21,51 +21,57 @@ fun GoalsScreen(
     navController: NavController,
     vm: GoalsViewModel = hiltViewModel()
 ) {
-    val goals by vm.goals.collectAsState(initial = emptyList())
+    val goals by vm.goals.collectAsState()
     var showDialog by remember { mutableStateOf(false) }
 
     Scaffold(
-        topBar  = { TopAppBar(title = { Text("Goals") }) },
+        topBar    = { TopAppBar(title = { Text("Goals") }) },
         bottomBar = { BottomNavBar(navController) },
         floatingActionButton = {
             FloatingActionButton(onClick = { showDialog = true }) {
-                Icon(Icons.Outlined.Add, contentDescription = "Add goal")
+                Icon(Icons.Outlined.Add, "Add goal")
             }
         }
-    ) { padding ->
+    ) { pad ->
         if (goals.isEmpty()) {
             Box(
-                modifier = Modifier.fillMaxSize().padding(padding),
+                modifier = Modifier.fillMaxSize().padding(pad),
                 contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text  = "No goals yet. Tap + to set a daily limit.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
-                )
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("No goals yet", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "Tap + to set a daily limit for any app.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                    )
+                }
             }
         } else {
             LazyColumn(
                 contentPadding = PaddingValues(
-                    top = padding.calculateTopPadding() + 8.dp,
-                    bottom = padding.calculateBottomPadding() + 8.dp,
+                    top = pad.calculateTopPadding() + 8.dp,
+                    bottom = pad.calculateBottomPadding() + 72.dp,
                     start = 16.dp, end = 16.dp
                 ),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                items(goals, key = { it.id }) { goal ->
-                    GoalCard(goal = goal, onDelete = { vm.delete(goal) })
+                items(goals, key = { it.packageName }) { goal ->
+                    GoalCard(
+                        goal           = goal,
+                        onDelete       = { vm.delete(goal) },
+                        onToggleRemind = { vm.toggleReminder(goal) }
+                    )
                 }
             }
         }
-
         if (showDialog) {
             AddGoalDialog(
-                onConfirm = { pkg, limitMs ->
-                    vm.upsertGoal(pkg, limitMs)
+                onDismiss = { showDialog = false },
+                onConfirm = { pkg, label, ms, remind ->
+                    vm.addGoal(pkg, label, ms, remind)
                     showDialog = false
-                },
-                onDismiss = { showDialog = false }
+                }
             )
         }
     }

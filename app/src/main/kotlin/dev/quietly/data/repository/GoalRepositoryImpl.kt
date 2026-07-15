@@ -12,8 +12,7 @@ class GoalRepositoryImpl @Inject constructor(
     private val dao: GoalDao
 ) : GoalRepository {
     override fun observeAll(): Flow<List<GoalEntity>> = dao.observeAll()
-    override suspend fun upsert(goal: GoalEntity) = dao.upsert(goal)
-    override suspend fun delete(goal: GoalEntity) = dao.delete(goal)
-    override suspend fun forPackage(pkg: String): GoalEntity? = dao.forPackage(pkg)
-    override suspend fun activeGoals(): List<GoalEntity> = dao.activeGoals()
+    override suspend fun getByPackage(pkg: String): GoalEntity? = dao.getByPackage(pkg)
+    override suspend fun upsert(goal: GoalEntity)  = dao.upsert(goal)
+    override suspend fun delete(goal: GoalEntity)  = dao.delete(goal)
 }

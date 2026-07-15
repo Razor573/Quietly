@@ -5,10 +5,8 @@ import androidx.room.PrimaryKey
 
 @Entity(tableName = "goals")
 data class GoalEntity(
-    @PrimaryKey(autoGenerate = true)
-    val id            : Long   = 0,
-    val packageName   : String,
-    val dailyLimitMs  : Long,          // user’s target in ms
-    val reminderEnabled: Boolean = true,
-    val createdAt     : Long = System.currentTimeMillis()
+    @PrimaryKey val packageName: String,
+    val appLabel:        String  = "",
+    val dailyLimitMs:    Long,            // user-set daily limit in ms
+    val reminderEnabled: Boolean = true   // NEW: per-goal reminder toggle
 )
