@@ -108,8 +108,9 @@ class UsageStatsSource @Inject constructor(
     } catch (_: Exception) { "Other" }
 
     /**
-     * CATEGORY_MUSIC, CATEGORY_PRODUCTIVITY, CATEGORY_ACCESSIBILITY added in API 31.
-     * minSdk is 26 — guard them behind a version check to avoid unresolved references.
+     * CATEGORY_MUSIC, CATEGORY_PRODUCTIVITY, and CATEGORY_ACCESSIBILITY were
+     * added in API 31 (Android 12 / Build.VERSION_CODES.S). Guard them so the
+     * compiler never sees an unresolved reference on minSdk 26 runners.
      */
     private fun categoryFromPmCategory(info: ApplicationInfo): String {
         val baseCategory = when (info.category) {
@@ -124,10 +125,10 @@ class UsageStatsSource @Inject constructor(
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             val api31Category = when (info.category) {
-                ApplicationInfo.CATEGORY_MUSIC         -> "Music"
-                ApplicationInfo.CATEGORY_PRODUCTIVITY  -> "Productivity"
-                ApplicationInfo.CATEGORY_ACCESSIBILITY -> "Accessibility"
-                else                                   -> null
+                ApplicationInfo.CATEGORY_MUSIC          -> "Music"
+                ApplicationInfo.CATEGORY_PRODUCTIVITY   -> "Productivity"
+                ApplicationInfo.CATEGORY_ACCESSIBILITY  -> "Accessibility"
+                else                                    -> null
             }
             if (api31Category != null) return api31Category
         }
