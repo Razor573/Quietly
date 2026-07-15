@@ -120,7 +120,7 @@ class UsageStatsSource @Inject constructor(
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             val api31Category = when (info.category) {
-                ApplicationInfo.CATEGORY_MUSIC         -> "Music"
+                ApplicationInfo.CATEGORY_AUDIO         -> "Music"
                 ApplicationInfo.CATEGORY_PRODUCTIVITY  -> "Productivity"
                 ApplicationInfo.CATEGORY_ACCESSIBILITY -> "Accessibility"
                 else                                   -> null
