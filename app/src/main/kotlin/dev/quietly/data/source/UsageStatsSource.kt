@@ -37,6 +37,14 @@ class UsageStatsSource @Inject constructor(
         "com.samsung.android.honeyboard"
     )
 
+    // API 31+ category int values — use raw ints so KSP/kotlinc never
+    // sees an unresolved symbol reference on minSdk 26 build runners.
+    // Values sourced from AOSP ApplicationInfo.java (stable, never change):
+    //   CATEGORY_MUSIC = 8, CATEGORY_PRODUCTIVITY = 9, CATEGORY_ACCESSIBILITY = 11
+    private val CATEGORY_MUSIC_INT         = 8
+    private val CATEGORY_PRODUCTIVITY_INT  = 9
+    private val CATEGORY_ACCESSIBILITY_INT = 11
+
     fun queryToday(): List<AppUsageEntity> = queryRange(
         LocalDate.now().toEpochDay().toInt(),
         LocalDate.now().toEpochDay().toInt()
@@ -108,6 +116,7 @@ class UsageStatsSource @Inject constructor(
     } catch (_: Exception) { "Other" }
 
     private fun categoryFromPmCategory(info: ApplicationInfo): String {
+        // These constants are available on all API levels >= 26
         val baseCategory = when (info.category) {
             ApplicationInfo.CATEGORY_GAME   -> "Games"
             ApplicationInfo.CATEGORY_SOCIAL -> "Social"
@@ -118,17 +127,14 @@ class UsageStatsSource @Inject constructor(
         }
         if (baseCategory != null) return baseCategory
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            val api31Category = when (info.category) {
-                ApplicationInfo.CATEGORY_MUSIC         -> "Music"
-                ApplicationInfo.CATEGORY_PRODUCTIVITY  -> "Productivity"
-                ApplicationInfo.CATEGORY_ACCESSIBILITY -> "Accessibility"
-                else                                   -> null
-            }
-            if (api31Category != null) return api31Category
+        // Use raw int values for API 31+ categories — avoids KSP unresolved
+        // reference on minSdk 26 runners regardless of runtime version guards.
+        return when (info.category) {
+            CATEGORY_MUSIC_INT         -> "Music"
+            CATEGORY_PRODUCTIVITY_INT  -> "Productivity"
+            CATEGORY_ACCESSIBILITY_INT -> "Accessibility"
+            else                       -> "Other"
         }
-
-        return "Other"
     }
 
     private fun epochDayToMs(epochDay: Int): Long =
