@@ -9,7 +9,8 @@ import java.util.TimeZone
 data class RawUsageEvent(
     val packageName: String,
     val eventType: Int,
-    val timestampMs: Long
+    val timestampMs: Long,
+    val className: String? = null
 )
 
 data class DailyAppUsage(
@@ -79,20 +80,45 @@ object UsageEventAggregator {
         // ------------------------------------------------------------------
         val sorted = events.sortedBy { it.timestampMs }
         val stateByPkg = mutableMapOf<String, PackageState>()
+        val activeActivitiesByPkg = mutableMapOf<String, MutableSet<String>>()
+        val pkgForegroundStart = mutableMapOf<String, Long>()
 
         for (e in sorted) {
-            val state = stateByPkg.getOrPut(e.packageName) { PackageState() }
+            val pkg = e.packageName
+            val cls = e.className ?: "default"
+            val state = stateByPkg.getOrPut(pkg) { PackageState() }
+
             when (e.eventType) {
                 EVENT_ACTIVITY_RESUMED -> {
-                    state.sessions.add(Session(startMs = e.timestampMs))
-                    state.launches++
+                    val activeSet = activeActivitiesByPkg.getOrPut(pkg) { mutableSetOf() }
+                    if (activeSet.isEmpty()) {
+                        pkgForegroundStart[pkg] = e.timestampMs
+                        state.launches++
+                    }
+                    activeSet.add(cls)
                 }
-                EVENT_ACTIVITY_PAUSED,
+                EVENT_ACTIVITY_PAUSED -> {
+                    val activeSet = activeActivitiesByPkg[pkg]
+                    if (activeSet != null) {
+                        activeSet.remove(cls)
+                        if (activeSet.isEmpty()) {
+                            val startTime = pkgForegroundStart.remove(pkg)
+                            if (startTime != null && e.timestampMs >= startTime) {
+                                state.sessions.add(Session(startMs = startTime, endMs = e.timestampMs))
+                            }
+                        }
+                    }
+                }
                 EVENT_ACTIVITY_STOPPED -> {
-                    // Close the most recent open session
-                    val open = state.sessions.lastOrNull { it.endMs == null }
-                    if (open != null && e.timestampMs >= open.startMs) {
-                        open.endMs = e.timestampMs
+                    val activeSet = activeActivitiesByPkg[pkg]
+                    if (activeSet != null && activeSet.contains(cls)) {
+                        activeSet.remove(cls)
+                        if (activeSet.isEmpty()) {
+                            val startTime = pkgForegroundStart.remove(pkg)
+                            if (startTime != null && e.timestampMs >= startTime) {
+                                state.sessions.add(Session(startMs = startTime, endMs = e.timestampMs))
+                            }
+                        }
                     }
                 }
             }
@@ -101,10 +127,11 @@ object UsageEventAggregator {
         // ------------------------------------------------------------------
         // 2. Close any session still open at nowMs (app is in the foreground)
         // ------------------------------------------------------------------
-        for (state in stateByPkg.values) {
-            state.sessions
-                .filter { it.endMs == null }
-                .forEach { it.endMs = nowMs }
+        for ((pkg, startTime) in pkgForegroundStart) {
+            val state = stateByPkg.getOrPut(pkg) { PackageState() }
+            if (nowMs > startTime) {
+                state.sessions.add(Session(startMs = startTime, endMs = nowMs))
+            }
         }
 
         // ------------------------------------------------------------------

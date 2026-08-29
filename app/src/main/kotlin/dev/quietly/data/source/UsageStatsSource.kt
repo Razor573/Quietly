@@ -111,7 +111,8 @@ class UsageStatsSource @Inject constructor(
                 RawUsageEvent(
                     packageName = pkg,
                     eventType   = event.eventType,
-                    timestampMs = event.timeStamp
+                    timestampMs = event.timeStamp,
+                    className   = event.className
                 )
             )
         }
