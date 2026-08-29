@@ -134,17 +134,55 @@ class UsageStatsSource @Inject constructor(
             }
         }
 
-        return daily.map { d ->
-            AppUsageEntity(
-                packageName  = d.packageName,
-                dateEpochDay = d.epochDay.toInt(),
-                appLabel     = getLabel(d.packageName),
-                totalTimeMs  = d.totalMs,
-                launchCount  = d.launches,
-                lastSeenEpochDay = d.epochDay.toInt(),
-                category     = getCategory(d.packageName)
-            )
-        }.sortedByDescending { it.totalTimeMs }
+        val dailyMap = daily.associateBy { it.packageName }
+
+        val mainIntent = Intent(Intent.ACTION_MAIN, null).apply {
+            addCategory(Intent.CATEGORY_LAUNCHER)
+        }
+        val resolves: List<ResolveInfo> = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            pm.queryIntentActivities(mainIntent, PackageManager.ResolveInfoFlags.of(0))
+        } else {
+            @Suppress("DEPRECATION")
+            pm.queryIntentActivities(mainIntent, 0)
+        }
+
+        val myPkg = ctx.packageName
+        val launcherPkgs = resolves
+            .asSequence()
+            .map { it.activityInfo.packageName }
+            .filter { it != myPkg && it !in blockList }
+            .distinct()
+            .toSet()
+
+        val allPkgs = (dailyMap.keys + launcherPkgs)
+
+        return allPkgs.map { pkg ->
+            val d = dailyMap[pkg]
+            if (d != null) {
+                AppUsageEntity(
+                    packageName  = d.packageName,
+                    dateEpochDay = d.epochDay.toInt(),
+                    appLabel     = getLabel(d.packageName),
+                    totalTimeMs  = d.totalMs,
+                    launchCount  = d.launches,
+                    lastSeenEpochDay = d.epochDay.toInt(),
+                    category     = getCategory(d.packageName)
+                )
+            } else {
+                AppUsageEntity(
+                    packageName  = pkg,
+                    dateEpochDay = toEpochDay.toInt(),
+                    appLabel     = getLabel(pkg),
+                    totalTimeMs  = 0L,
+                    launchCount  = 0,
+                    lastSeenEpochDay = toEpochDay.toInt(),
+                    category     = getCategory(pkg)
+                )
+            }
+        }.sortedWith(
+            compareByDescending<AppUsageEntity> { it.totalTimeMs }
+                .thenBy { it.appLabel.lowercase() }
+        )
     }
 
     /** Resolve a human-readable label for a package (falls back to package name). */
