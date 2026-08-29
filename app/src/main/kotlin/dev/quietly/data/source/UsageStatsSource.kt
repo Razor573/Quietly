@@ -3,8 +3,11 @@ package dev.quietly.data.source
 import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
 import android.content.Context
+import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
+import android.content.pm.ResolveInfo
+import android.os.Build
 import android.util.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dev.quietly.data.db.entity.AppUsageEntity
@@ -165,10 +168,17 @@ class UsageStatsSource @Inject constructor(
         }
     } catch (_: PackageManager.NameNotFoundException) { "Other" }
 
-    /** Returns true if the package belongs to a user-installed app. */
+    /** Returns true if the package belongs to a user-installed app or user launchable app. */
     private fun isUserApp(pkg: String): Boolean = try {
-        val flags = pm.getApplicationInfo(pkg, 0).flags
-        (flags and ApplicationInfo.FLAG_SYSTEM) == 0
+        val appInfo = pm.getApplicationInfo(pkg, 0)
+        // Check if it's not a system app, OR if it has a launcher intent (user-launchable app like Chrome or Youtube system updates)
+        if ((appInfo.flags and ApplicationInfo.FLAG_SYSTEM) == 0) {
+            true
+        } else {
+            // Check if user launchable
+            val launchIntent = pm.getLaunchIntentForPackage(pkg)
+            launchIntent != null
+        }
     } catch (_: PackageManager.NameNotFoundException) { false }
 
     /**

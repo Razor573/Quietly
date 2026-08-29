@@ -106,8 +106,16 @@ fun AppsScreen(
                             modifier = Modifier.fillMaxWidth().padding(vertical = 40.dp),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text("No apps found", style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
+                            val emptyMessage = if (s.apps.isEmpty()) {
+                                "No applications recorded today. Ensure Usage Access permission is enabled."
+                            } else {
+                                "No applications match your search."
+                            }
+                            Text(
+                                text = emptyMessage,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                            )
                         }
                     }
                 } else {
