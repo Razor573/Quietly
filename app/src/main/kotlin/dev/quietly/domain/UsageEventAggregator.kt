@@ -38,9 +38,11 @@ private class PackageState {
 object UsageEventAggregator {
 
     // Android UsageEvents event type constants
-    const val EVENT_ACTIVITY_RESUMED = 1
-    const val EVENT_ACTIVITY_PAUSED  = 2
-    const val EVENT_ACTIVITY_STOPPED = 23
+    const val EVENT_ACTIVITY_RESUMED       = 1
+    const val EVENT_ACTIVITY_PAUSED        = 2
+    const val EVENT_ACTIVITY_STOPPED       = 23
+    const val EVENT_SCREEN_NON_INTERACTIVE = 16
+    const val EVENT_KEYGUARD_SHOWN         = 17
 
     /**
      * Aggregates raw usage events into per-app, per-local-day totals.
@@ -120,6 +122,17 @@ object UsageEventAggregator {
                             }
                         }
                     }
+                }
+                EVENT_SCREEN_NON_INTERACTIVE, EVENT_KEYGUARD_SHOWN -> {
+                    // Screen locked / non-interactive: pause all active sessions across all packages
+                    for ((activePkg, startTime) in pkgForegroundStart) {
+                        if (e.timestampMs > startTime) {
+                            val activeState = stateByPkg.getOrPut(activePkg) { PackageState() }
+                            activeState.sessions.add(Session(startMs = startTime, endMs = e.timestampMs))
+                        }
+                    }
+                    pkgForegroundStart.clear()
+                    activeActivitiesByPkg.clear()
                 }
             }
         }

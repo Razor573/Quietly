@@ -22,6 +22,9 @@ interface UsageRepository {
     /** All individual daily rows across the 90-day window (for active-day counting). */
     suspend fun allPerDayRows90(today: Int): List<AppUsageEntity>
 
+    /** Returns computed Q-Score AppInsights for installed apps. */
+    suspend fun getAppInsights(): List<dev.quietly.domain.AppInsight>
+
     // ── Per-app overrides ─────────────────────────────────────────────────────
 
     suspend fun getOverrides(): List<AppOverrideEntity>

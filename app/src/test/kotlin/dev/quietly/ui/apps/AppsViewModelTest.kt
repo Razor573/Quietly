@@ -123,5 +123,7 @@ class AppsViewModelTest {
         override suspend fun setOverride(entity: AppOverrideEntity) {}
 
         override suspend fun clearOverride(packageName: String) {}
+
+        override suspend fun getAppInsights(): List<dev.quietly.domain.AppInsight> = emptyList()
     }
 }

@@ -13,6 +13,8 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import dev.quietly.data.db.entity.AppUsageEntity
 import dev.quietly.domain.RawUsageEvent
 import dev.quietly.domain.UsageEventAggregator
+import java.time.LocalDate
+import java.time.ZoneId
 import java.util.Calendar
 import java.util.TimeZone
 import javax.inject.Inject
@@ -52,20 +54,21 @@ class UsageStatsSource @Inject constructor(
     // Public API
     // -----------------------------------------------------------------------
 
-    /** Query the last 24 hours using local-timezone day boundaries. */
+    /** Query today's usage from local calendar midnight (00:00:00) to now. */
     fun queryToday(): List<AppUsageEntity> {
-        val nowMs       = System.currentTimeMillis()
-        val fromMs      = nowMs - DAY_MS
-        val fromEpochDay = localEpochDay(fromMs)
-        val toEpochDay   = localEpochDay(nowMs)
-        Log.d(TAG, "queryToday: fromEpochDay=$fromEpochDay toEpochDay=$toEpochDay")
+        val zoneId     = ZoneId.systemDefault()
+        val startOfDay = LocalDate.now(zoneId).atStartOfDay(zoneId).toInstant().toEpochMilli()
+        val nowMs      = System.currentTimeMillis()
+        val todayEpochDay = LocalDate.now(zoneId).toEpochDay()
+
+        Log.d(TAG, "queryToday: todayEpochDay=$todayEpochDay startOfDay=$startOfDay")
         return queryWindow(
-            fromMs          = fromMs,
+            fromMs          = startOfDay,
             toMsExclusive   = nowMs,
-            fromEpochDay    = fromEpochDay,
-            toEpochDay      = toEpochDay,
+            fromEpochDay    = todayEpochDay,
+            toEpochDay      = todayEpochDay,
             nowMs           = nowMs,
-            diagnosticLabel = "last24h"
+            diagnosticLabel = "todayLocal"
         )
     }
 
