@@ -35,21 +35,29 @@ class AppsViewModel @Inject constructor(
     init {
         val today = LocalDate.now().toEpochDay().toInt()
         viewModelScope.launch {
-            usageRepo.syncToday()
-            usageRepo.observeDay(today).collect { apps ->
-                _state.update { s ->
-                    val sorted = sort(apps, s.sort)
-                    val filtered = filter(sorted, s.query)
-                    s.copy(
-                        apps        = sorted,
-                        filtered    = filtered,
-                        totalApps   = apps.size,
-                        totalOpens  = apps.sumOf { it.launchCount },
-                        totalTimeMs = apps.sumOf { it.totalTimeMs },
-                        isLoading   = false
-                    )
-                }
+            try {
+                usageRepo.syncToday()
+            } catch (_: Exception) {
+                // Ignore sync errors gracefully and observe DB cache
             }
+            usageRepo.observeDay(today)
+                .catch {
+                    _state.update { s -> s.copy(isLoading = false) }
+                }
+                .collect { apps ->
+                    _state.update { s ->
+                        val sorted = sort(apps, s.sort)
+                        val filtered = filter(sorted, s.query)
+                        s.copy(
+                            apps        = sorted,
+                            filtered    = filtered,
+                            totalApps   = apps.size,
+                            totalOpens  = apps.sumOf { it.launchCount },
+                            totalTimeMs = apps.sumOf { it.totalTimeMs },
+                            isLoading   = false
+                        )
+                    }
+                }
         }
     }
 
@@ -71,5 +79,8 @@ class AppsViewModel @Inject constructor(
 
     private fun filter(list: List<AppUsageEntity>, q: String) =
         if (q.isBlank()) list
-        else list.filter { it.appLabel.contains(q, ignoreCase = true) }
+        else list.filter {
+            it.appLabel.contains(q, ignoreCase = true) ||
+            it.packageName.contains(q, ignoreCase = true)
+        }
 }

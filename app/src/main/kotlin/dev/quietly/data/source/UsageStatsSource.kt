@@ -3,8 +3,11 @@ package dev.quietly.data.source
 import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
 import android.content.Context
+import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
+import android.content.pm.ResolveInfo
+import android.os.Build
 import android.util.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dev.quietly.data.db.entity.AppUsageEntity
@@ -108,7 +111,8 @@ class UsageStatsSource @Inject constructor(
                 RawUsageEvent(
                     packageName = pkg,
                     eventType   = event.eventType,
-                    timestampMs = event.timeStamp
+                    timestampMs = event.timeStamp,
+                    className   = event.className
                 )
             )
         }
@@ -131,17 +135,55 @@ class UsageStatsSource @Inject constructor(
             }
         }
 
-        return daily.map { d ->
-            AppUsageEntity(
-                packageName  = d.packageName,
-                dateEpochDay = d.epochDay.toInt(),
-                appLabel     = getLabel(d.packageName),
-                totalTimeMs  = d.totalMs,
-                launchCount  = d.launches,
-                lastSeenEpochDay = d.epochDay.toInt(),
-                category     = getCategory(d.packageName)
-            )
-        }.sortedByDescending { it.totalTimeMs }
+        val dailyMap = daily.associateBy { it.packageName }
+
+        val mainIntent = Intent(Intent.ACTION_MAIN, null).apply {
+            addCategory(Intent.CATEGORY_LAUNCHER)
+        }
+        val resolves: List<ResolveInfo> = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            pm.queryIntentActivities(mainIntent, PackageManager.ResolveInfoFlags.of(0))
+        } else {
+            @Suppress("DEPRECATION")
+            pm.queryIntentActivities(mainIntent, 0)
+        }
+
+        val myPkg = ctx.packageName
+        val launcherPkgs = resolves
+            .asSequence()
+            .map { it.activityInfo.packageName }
+            .filter { it != myPkg && it !in blockList }
+            .distinct()
+            .toSet()
+
+        val allPkgs = (dailyMap.keys + launcherPkgs)
+
+        return allPkgs.map { pkg ->
+            val d = dailyMap[pkg]
+            if (d != null) {
+                AppUsageEntity(
+                    packageName  = d.packageName,
+                    dateEpochDay = d.epochDay.toInt(),
+                    appLabel     = getLabel(d.packageName),
+                    totalTimeMs  = d.totalMs,
+                    launchCount  = d.launches,
+                    lastSeenEpochDay = d.epochDay.toInt(),
+                    category     = getCategory(d.packageName)
+                )
+            } else {
+                AppUsageEntity(
+                    packageName  = pkg,
+                    dateEpochDay = toEpochDay.toInt(),
+                    appLabel     = getLabel(pkg),
+                    totalTimeMs  = 0L,
+                    launchCount  = 0,
+                    lastSeenEpochDay = toEpochDay.toInt(),
+                    category     = getCategory(pkg)
+                )
+            }
+        }.sortedWith(
+            compareByDescending<AppUsageEntity> { it.totalTimeMs }
+                .thenBy { it.appLabel.lowercase() }
+        )
     }
 
     /** Resolve a human-readable label for a package (falls back to package name). */
@@ -165,10 +207,17 @@ class UsageStatsSource @Inject constructor(
         }
     } catch (_: PackageManager.NameNotFoundException) { "Other" }
 
-    /** Returns true if the package belongs to a user-installed app. */
+    /** Returns true if the package belongs to a user-installed app or user launchable app. */
     private fun isUserApp(pkg: String): Boolean = try {
-        val flags = pm.getApplicationInfo(pkg, 0).flags
-        (flags and ApplicationInfo.FLAG_SYSTEM) == 0
+        val appInfo = pm.getApplicationInfo(pkg, 0)
+        // Check if it's not a system app, OR if it has a launcher intent (user-launchable app like Chrome or Youtube system updates)
+        if ((appInfo.flags and ApplicationInfo.FLAG_SYSTEM) == 0) {
+            true
+        } else {
+            // Check if user launchable
+            val launchIntent = pm.getLaunchIntentForPackage(pkg)
+            launchIntent != null
+        }
     } catch (_: PackageManager.NameNotFoundException) { false }
 
     /**
