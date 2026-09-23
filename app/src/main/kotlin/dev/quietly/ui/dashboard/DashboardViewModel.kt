@@ -56,10 +56,21 @@ class DashboardViewModel @Inject constructor(
         // Poll UsageStatsManager every 60 s and write to DB
         viewModelScope.launch {
             while (true) {
-                usageRepo.syncToday()
-                loadWeekly()
+                try {
+                    usageRepo.syncToday()
+                    loadWeekly()
+                } catch (_: Exception) {}
                 delay(60_000)
             }
+        }
+    }
+
+    fun refresh() {
+        viewModelScope.launch {
+            try {
+                usageRepo.syncToday()
+                loadWeekly()
+            } catch (_: Exception) {}
         }
     }
 

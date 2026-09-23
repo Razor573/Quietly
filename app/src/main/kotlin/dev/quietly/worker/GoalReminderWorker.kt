@@ -11,6 +11,8 @@ import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import dev.quietly.domain.repository.GoalRepository
 import dev.quietly.domain.repository.UsageRepository
+import dev.quietly.util.toHoursMinutes
+import kotlinx.coroutines.flow.first
 import java.time.LocalDate
 import java.util.concurrent.TimeUnit
 
@@ -24,7 +26,9 @@ class GoalReminderWorker @AssistedInject constructor(
 
     override suspend fun doWork(): Result {
         val today = LocalDate.now().toEpochDay().toInt()
-        usageRepo.syncToday()
+        try {
+            usageRepo.syncToday()
+        } catch (_: Exception) {}
 
         val nm = applicationContext
             .getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -36,7 +40,8 @@ class GoalReminderWorker @AssistedInject constructor(
             )
         }
 
-        goalRepo.observeAll().collect { goals ->
+        try {
+            val goals = goalRepo.observeAll().first()
             goals.filter { it.reminderEnabled }.forEach { goal ->
                 val usage = usageRepo.queryRange(today, today)
                     .firstOrNull { it.packageName == goal.packageName } ?: return@forEach
@@ -45,13 +50,16 @@ class GoalReminderWorker @AssistedInject constructor(
                     val notif = NotificationCompat.Builder(applicationContext, CHANNEL_ID)
                         .setSmallIcon(android.R.drawable.ic_dialog_info)
                         .setContentTitle("Screen time alert — ${goal.appLabel.ifBlank { goal.packageName }}")
-                        .setContentText("You've used 90% of today's ${goal.dailyLimitMs / 3_600_000}h limit.")
+                        .setContentText("You've used 90% of today's ${goal.dailyLimitMs.toHoursMinutes()} limit.")
                         .setAutoCancel(true)
                         .build()
-                    nm.notify(goal.packageName.hashCode(), notif)
+                    try {
+                        nm.notify(goal.packageName.hashCode(), notif)
+                    } catch (_: SecurityException) {}
                 }
             }
-        }
+        } catch (_: Exception) {}
+
         return Result.success()
     }
 

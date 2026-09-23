@@ -18,6 +18,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import dev.quietly.ui.dashboard.WeeklyBarChart
+import dev.quietly.ui.goals.AddGoalDialog
 import dev.quietly.util.toHoursMinutes
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -30,6 +31,7 @@ fun AppDetailScreen(
     vm:  AppDetailViewModel = hiltViewModel()
 ) {
     val s by vm.uiState.collectAsState()
+    var showGoalDialog by remember { mutableStateOf(false) }
     LaunchedEffect(pkg) { vm.load(pkg) }
 
     Scaffold(
@@ -81,7 +83,47 @@ fun AppDetailScreen(
                     ) {
                         StatItem("Today",    s.todayMs.toHoursMinutes())
                         StatItem("7-day avg", s.avgDailyMs.toHoursMinutes())
-                        StatItem("Category", s.category)
+                        StatItem("Category", s.category.ifBlank { "Uncategorized" })
+                    }
+                }
+            }
+
+            // ── Goal section ──────────────────────────────────────────────
+            item {
+                val goal = s.goal
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier
+                            .padding(16.dp)
+                            .fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                if (goal != null) "Daily Limit: ${goal.dailyLimitMs.toHoursMinutes()}"
+                                else "No daily goal set",
+                                style = MaterialTheme.typography.titleSmall
+                            )
+                            Spacer(Modifier.height(2.dp))
+                            Text(
+                                if (goal != null) {
+                                    val left = goal.dailyLimitMs - s.todayMs
+                                    if (left > 0) "${left.toHoursMinutes()} remaining today"
+                                    else "Limit exceeded today by ${(-left).toHoursMinutes()}"
+                                } else "Set a limit to help curb screen time.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        if (goal != null) {
+                            TextButton(onClick = { showGoalDialog = true }) {
+                                Text("Edit")
+                            }
+                        } else {
+                            Button(onClick = { showGoalDialog = true }) {
+                                Text("Set limit")
+                            }
+                        }
                     }
                 }
             }
@@ -129,6 +171,20 @@ fun AppDetailScreen(
                         style = MaterialTheme.typography.labelSmall)
                 }
             }
+        }
+
+        if (showGoalDialog) {
+            AddGoalDialog(
+                initialPkg      = pkg,
+                initialLabel    = s.appLabel,
+                initialLimitMs  = s.goal?.dailyLimitMs ?: 3_600_000L,
+                initialReminder = s.goal?.reminderEnabled ?: true,
+                onDismiss       = { showGoalDialog = false },
+                onConfirm       = { _, _, limitMs, reminder ->
+                    vm.setGoal(limitMs, reminder)
+                    showGoalDialog = false
+                }
+            )
         }
     }
 }

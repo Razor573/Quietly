@@ -24,7 +24,20 @@ class UsageRepositoryImpl @Inject constructor(
     override suspend fun syncToday() {
         val today   = LocalDate.now().toEpochDay().toInt()
         val entries = source.queryToday()
-        entries.forEach { dao.upsert(it.copy(dateEpochDay = today, lastSeenEpochDay = today)) }
+        if (entries.isNotEmpty()) {
+            dao.upsertAll(entries.map { it.copy(dateEpochDay = today, lastSeenEpochDay = today) })
+        }
+
+        // Backfill past 7 days on fresh install or empty history
+        try {
+            val pastTotals = dao.dailyTotals(today - 7, today - 1)
+            if (pastTotals.isEmpty()) {
+                val pastEntries = source.queryRange(today - 7, today - 1)
+                if (pastEntries.isNotEmpty()) {
+                    dao.upsertAll(pastEntries)
+                }
+            }
+        } catch (_: Exception) {}
     }
 
     override suspend fun queryRange(fromDay: Int, toDay: Int): List<AppUsageEntity> =

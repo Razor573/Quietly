@@ -8,6 +8,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -42,6 +43,9 @@ fun DashboardScreen(
             TopAppBar(
                 title = { Text("Today") },
                 actions = {
+                    IconButton(onClick = { vm.refresh() }) {
+                        Icon(Icons.Outlined.Refresh, contentDescription = "Refresh")
+                    }
                     IconButton(onClick = { navController.navigate(Screen.Settings.route) }) {
                         Icon(Icons.Outlined.Settings, contentDescription = "Settings")
                     }
@@ -75,15 +79,45 @@ fun DashboardScreen(
                     }
                 }
 
-                // ── App rows (tappable → detail) ──────────────────────────
-                items(uiState.appUsages, key = { it.packageName }) { usage ->
-                    AppUsageRow(
-                        usage    = usage,
-                        goal     = uiState.goals[usage.packageName],
-                        onClick  = {
-                            navController.navigate(Screen.AppDetail.withArg(usage.packageName))
+                if (uiState.appUsages.isEmpty()) {
+                    item {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                            )
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .padding(20.dp)
+                                    .fillMaxWidth(),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text(
+                                    "No usage recorded today",
+                                    style = MaterialTheme.typography.titleSmall
+                                )
+                                Spacer(Modifier.height(4.dp))
+                                Text(
+                                    "Use your apps normally and their screen time will automatically appear here.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                )
+                            }
                         }
-                    )
+                    }
+                } else {
+                    // ── App rows (tappable → detail) ──────────────────────────
+                    items(uiState.appUsages, key = { it.packageName }) { usage ->
+                        AppUsageRow(
+                            usage    = usage,
+                            goal     = uiState.goals[usage.packageName],
+                            onClick  = {
+                                navController.navigate(Screen.AppDetail.withArg(usage.packageName))
+                            }
+                        )
+                    }
                 }
             }
         }
@@ -113,7 +147,7 @@ private fun TotalTimeHeroCard(totalMs: Long) {
 fun WeeklyBarChart(totals: List<DayTotal>, modifier: Modifier = Modifier) {
     val barColor   = MaterialTheme.colorScheme.primary
     val labelColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-    val maxMs      = totals.maxOfOrNull { it.totalTimeMs } ?: 1L
+    val maxMs      = (totals.maxOfOrNull { it.totalTimeMs } ?: 0L).coerceAtLeast(1L)
     val today      = LocalDate.now().toEpochDay().toInt()
 
     Card(modifier = modifier.fillMaxWidth()) {
@@ -125,12 +159,11 @@ fun WeeklyBarChart(totals: List<DayTotal>, modifier: Modifier = Modifier) {
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.Bottom
             ) {
-                // Fill missing days with 0
                 val dayMap = totals.associateBy { it.dateEpochDay }
                 (0..6).forEach { offset ->
                     val day  = today - 6 + offset
                     val ms   = dayMap[day]?.totalTimeMs ?: 0L
-                    val frac = (ms.toFloat() / maxMs.toFloat()).coerceIn(0f, 1f)
+                    val frac = if (ms > 0L) (ms.toFloat() / maxMs.toFloat()).coerceIn(0.04f, 1f) else 0f
                     val date = LocalDate.ofEpochDay(day.toLong())
                     val lbl  = date.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale.getDefault())
                         .take(2)
@@ -145,16 +178,18 @@ fun WeeklyBarChart(totals: List<DayTotal>, modifier: Modifier = Modifier) {
                                 .weight(1f),
                             contentAlignment = Alignment.BottomCenter
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .fillMaxHeight(frac.coerceAtLeast(0.02f))
-                                    .clip(RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp))
-                                    .background(
-                                        if (day == today) barColor
-                                        else barColor.copy(alpha = 0.45f)
-                                    )
-                            )
+                            if (frac > 0f) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .fillMaxHeight(frac)
+                                        .clip(RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp))
+                                        .background(
+                                            if (day == today) barColor
+                                            else barColor.copy(alpha = 0.45f)
+                                        )
+                                )
+                            }
                         }
                         Spacer(Modifier.height(4.dp))
                         Text(lbl, style = MaterialTheme.typography.labelSmall,

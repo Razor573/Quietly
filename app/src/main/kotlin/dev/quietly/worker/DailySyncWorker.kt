@@ -18,9 +18,13 @@ class DailySyncWorker @AssistedInject constructor(
 ) : CoroutineWorker(ctx, params) {
 
     override suspend fun doWork(): Result {
-        repo.syncToday()
-        repo.purgeOld(prefs.retentionDays)
-        return Result.success()
+        return try {
+            repo.syncToday()
+            repo.purgeOld(prefs.retentionDays)
+            Result.success()
+        } catch (e: Exception) {
+            if (runAttemptCount < 3) Result.retry() else Result.failure()
+        }
     }
 
     companion object {

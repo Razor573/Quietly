@@ -13,6 +13,9 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import dev.quietly.data.db.entity.AppUsageEntity
 import dev.quietly.domain.RawUsageEvent
 import dev.quietly.domain.UsageEventAggregator
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
 import java.util.Calendar
 import java.util.TimeZone
 import javax.inject.Inject
@@ -52,31 +55,32 @@ class UsageStatsSource @Inject constructor(
     // Public API
     // -----------------------------------------------------------------------
 
-    /** Query the last 24 hours using local-timezone day boundaries. */
+    /** Query today's usage from local midnight until now. */
     fun queryToday(): List<AppUsageEntity> {
-        val nowMs       = System.currentTimeMillis()
-        val fromMs      = nowMs - DAY_MS
-        val fromEpochDay = localEpochDay(fromMs)
-        val toEpochDay   = localEpochDay(nowMs)
-        Log.d(TAG, "queryToday: fromEpochDay=$fromEpochDay toEpochDay=$toEpochDay")
+        val nowMs = System.currentTimeMillis()
+        val zoneId = ZoneId.systemDefault()
+        val todayLocalDate = LocalDate.now()
+        val todayEpochDay = todayLocalDate.toEpochDay()
+        val startOfTodayMs = todayLocalDate.atStartOfDay(zoneId).toInstant().toEpochMilli()
+        Log.d(TAG, "queryToday: todayEpochDay=$todayEpochDay startOfTodayMs=$startOfTodayMs")
         return queryWindow(
-            fromMs          = fromMs,
+            fromMs          = startOfTodayMs,
             toMsExclusive   = nowMs,
-            fromEpochDay    = fromEpochDay,
-            toEpochDay      = toEpochDay,
+            fromEpochDay    = todayEpochDay,
+            toEpochDay      = todayEpochDay,
             nowMs           = nowMs,
-            diagnosticLabel = "last24h"
+            diagnosticLabel = "today"
         )
     }
 
     /** Query a range of local-timezone days (both ends inclusive). */
     fun queryRange(fromEpochDay: Int, toEpochDay: Int): List<AppUsageEntity> {
         val nowMs = System.currentTimeMillis()
-        val tz    = TimeZone.getDefault()
-        val tzOff = tz.getOffset(nowMs).toLong()
-        // Convert local epoch days to absolute ms
-        val fromMs        = fromEpochDay.toLong() * DAY_MS - tzOff
-        val toMsExclusive = (toEpochDay.toLong() + 1L) * DAY_MS - tzOff
+        val zoneId = ZoneId.systemDefault()
+        val fromLocalDate = LocalDate.ofEpochDay(fromEpochDay.toLong())
+        val toLocalDate = LocalDate.ofEpochDay(toEpochDay.toLong())
+        val fromMs = fromLocalDate.atStartOfDay(zoneId).toInstant().toEpochMilli()
+        val toMsExclusive = toLocalDate.plusDays(1).atStartOfDay(zoneId).toInstant().toEpochMilli().coerceAtMost(nowMs + 1000L)
         return queryWindow(
             fromMs        = fromMs,
             toMsExclusive = toMsExclusive,
@@ -84,6 +88,40 @@ class UsageStatsSource @Inject constructor(
             toEpochDay    = toEpochDay.toLong(),
             nowMs         = nowMs
         )
+    }
+
+    /** Returns all installed user-launchable apps. */
+    fun getInstalledUserApps(): List<AppUsageEntity> {
+        val mainIntent = Intent(Intent.ACTION_MAIN, null).apply {
+            addCategory(Intent.CATEGORY_LAUNCHER)
+        }
+        val resolves: List<ResolveInfo> = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            pm.queryIntentActivities(mainIntent, PackageManager.ResolveInfoFlags.of(0))
+        } else {
+            @Suppress("DEPRECATION")
+            pm.queryIntentActivities(mainIntent, 0)
+        }
+
+        val myPkg = ctx.packageName
+        val todayEpochDay = LocalDate.now().toEpochDay().toInt()
+        return resolves
+            .asSequence()
+            .map { it.activityInfo.packageName }
+            .filter { it != myPkg && it !in blockList }
+            .distinct()
+            .map { pkg ->
+                AppUsageEntity(
+                    packageName      = pkg,
+                    dateEpochDay     = todayEpochDay,
+                    appLabel         = getLabel(pkg),
+                    totalTimeMs      = 0L,
+                    launchCount      = 0,
+                    lastSeenEpochDay = todayEpochDay,
+                    category         = getCategory(pkg)
+                )
+            }
+            .sortedBy { it.appLabel.lowercase() }
+            .toList()
     }
 
     // -----------------------------------------------------------------------
@@ -132,6 +170,20 @@ class UsageStatsSource @Inject constructor(
             Log.d(TAG, "[$diagnosticLabel] aggregated entries: ${daily.size}")
             daily.sortedByDescending { it.totalMs }.take(5).forEach {
                 Log.d(TAG, "  ${it.packageName}: ${it.totalMs / 60_000}min")
+            }
+        }
+
+        if (fromEpochDay != toEpochDay) {
+            return daily.map { d ->
+                AppUsageEntity(
+                    packageName      = d.packageName,
+                    dateEpochDay     = d.epochDay.toInt(),
+                    appLabel         = getLabel(d.packageName),
+                    totalTimeMs      = d.totalMs,
+                    launchCount      = d.launches,
+                    lastSeenEpochDay = d.epochDay.toInt(),
+                    category         = getCategory(d.packageName)
+                )
             }
         }
 
@@ -187,12 +239,12 @@ class UsageStatsSource @Inject constructor(
     }
 
     /** Resolve a human-readable label for a package (falls back to package name). */
-    private fun getLabel(pkg: String): String = try {
+    fun getLabel(pkg: String): String = try {
         pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString()
     } catch (_: PackageManager.NameNotFoundException) { pkg }
 
     /** Map ApplicationInfo.category to a plain string. */
-    private fun getCategory(pkg: String): String = try {
+    fun getCategory(pkg: String): String = try {
         when (pm.getApplicationInfo(pkg, 0).category) {
             ApplicationInfo.CATEGORY_GAME    -> "Games"
             ApplicationInfo.CATEGORY_SOCIAL  -> "Social"
@@ -222,19 +274,12 @@ class UsageStatsSource @Inject constructor(
 
     /**
      * Converts an absolute timestamp to a local-timezone epoch day.
-     * e.g. at UTC+4, midnight local = 20:00 UTC previous day;
-     * this correctly returns today's local day number.
      */
-    private fun localEpochDay(timestampMs: Long): Long {
-        val cal = Calendar.getInstance(TimeZone.getDefault())
-        cal.timeInMillis = timestampMs
-        // Strip time-of-day: set to local midnight
-        cal.set(Calendar.HOUR_OF_DAY, 0)
-        cal.set(Calendar.MINUTE, 0)
-        cal.set(Calendar.SECOND, 0)
-        cal.set(Calendar.MILLISECOND, 0)
-        // Days since Unix epoch in local time
-        return cal.timeInMillis / DAY_MS + cal.timeZone.getOffset(cal.timeInMillis) / DAY_MS
+    fun localEpochDay(timestampMs: Long): Long {
+        return LocalDate.ofInstant(
+            Instant.ofEpochMilli(timestampMs),
+            ZoneId.systemDefault()
+        ).toEpochDay()
     }
 
     companion object {

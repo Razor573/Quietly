@@ -28,7 +28,8 @@ sealed class Screen(val route: String) {
 @Composable
 fun QuietlyNavGraph(
     startDestination: String,
-    onboardingWasRevoked: Boolean = false
+    onboardingWasRevoked: Boolean = false,
+    onOnboardingComplete: () -> Unit = {}
 ) {
     val nav: NavHostController = rememberNavController()
     NavHost(navController = nav, startDestination = startDestination) {
@@ -37,6 +38,7 @@ fun QuietlyNavGraph(
             OnboardingScreen(
                 wasRevoked = onboardingWasRevoked,
                 onPermissionGranted = {
+                    onOnboardingComplete()
                     nav.navigate(Screen.Dashboard.route) {
                         popUpTo(Screen.Onboarding.route) { inclusive = true }
                     }

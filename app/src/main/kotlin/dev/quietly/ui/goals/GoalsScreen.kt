@@ -22,13 +22,18 @@ fun GoalsScreen(
     vm: GoalsViewModel = hiltViewModel()
 ) {
     val goals by vm.goals.collectAsState()
+    val todayUsage by vm.todayUsage.collectAsState()
     var showDialog by remember { mutableStateOf(false) }
+    var editingGoal by remember { mutableStateOf<dev.quietly.data.db.entity.GoalEntity?>(null) }
 
     Scaffold(
         topBar    = { TopAppBar(title = { Text("Goals") }) },
         bottomBar = { BottomNavBar(navController) },
         floatingActionButton = {
-            FloatingActionButton(onClick = { showDialog = true }) {
+            FloatingActionButton(onClick = {
+                editingGoal = null
+                showDialog = true
+            }) {
                 Icon(Icons.Outlined.Add, "Add goal")
             }
         }
@@ -40,6 +45,7 @@ fun GoalsScreen(
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text("No goals yet", style = MaterialTheme.typography.titleMedium)
+                    Spacer(Modifier.height(4.dp))
                     Text(
                         "Tap + to set a daily limit for any app.",
                         style = MaterialTheme.typography.bodySmall,
@@ -59,18 +65,31 @@ fun GoalsScreen(
                 items(goals, key = { it.packageName }) { goal ->
                     GoalCard(
                         goal           = goal,
+                        todayUsedMs    = todayUsage[goal.packageName] ?: 0L,
                         onDelete       = { vm.delete(goal) },
-                        onToggleRemind = { vm.toggleReminder(goal) }
+                        onToggleRemind = { vm.toggleReminder(goal) },
+                        onClick        = {
+                            editingGoal = goal
+                            showDialog = true
+                        }
                     )
                 }
             }
         }
         if (showDialog) {
             AddGoalDialog(
-                onDismiss = { showDialog = false },
+                initialPkg      = editingGoal?.packageName ?: "",
+                initialLabel    = editingGoal?.appLabel ?: "",
+                initialLimitMs  = editingGoal?.dailyLimitMs ?: 3_600_000L,
+                initialReminder = editingGoal?.reminderEnabled ?: true,
+                onDismiss = {
+                    showDialog = false
+                    editingGoal = null
+                },
                 onConfirm = { pkg, label, ms, remind ->
                     vm.addGoal(pkg, label, ms, remind)
                     showDialog = false
+                    editingGoal = null
                 }
             )
         }

@@ -1,11 +1,17 @@
 package dev.quietly.ui
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import dagger.hilt.android.AndroidEntryPoint
@@ -26,9 +32,27 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            QuietlyTheme(darkTheme = prefs.darkTheme) {
-                var unlocked by remember {
-                    mutableStateOf(!prefs.pinEnabled)
+            val darkTheme by prefs.darkThemeFlow.collectAsState()
+            val pinEnabled by prefs.pinEnabledFlow.collectAsState()
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                val notifLauncher = rememberLauncherForActivityResult(
+                    ActivityResultContracts.RequestPermission()
+                ) {}
+                LaunchedEffect(Unit) {
+                    if (ContextCompat.checkSelfPermission(
+                            this@MainActivity,
+                            Manifest.permission.POST_NOTIFICATIONS
+                        ) != PackageManager.PERMISSION_GRANTED
+                    ) {
+                        notifLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    }
+                }
+            }
+
+            QuietlyTheme(darkTheme = darkTheme) {
+                var unlocked by remember(pinEnabled) {
+                    mutableStateOf(!pinEnabled)
                 }
 
                 if (!unlocked && prefs.pinHash != null) {
@@ -62,7 +86,10 @@ class MainActivity : ComponentActivity() {
                     key(start, showRevokedOnboarding) {
                         QuietlyNavGraph(
                             startDestination = start,
-                            onboardingWasRevoked = showRevokedOnboarding
+                            onboardingWasRevoked = showRevokedOnboarding,
+                            onOnboardingComplete = {
+                                prefs.onboardingComplete = true
+                            }
                         )
                     }
                 }

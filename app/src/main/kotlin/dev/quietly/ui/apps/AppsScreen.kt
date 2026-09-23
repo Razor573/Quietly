@@ -122,6 +122,7 @@ fun AppsScreen(
                     items(s.filtered, key = { it.packageName }) { usage ->
                         AppUsageRow(
                             usage   = usage,
+                            goal    = s.goals[usage.packageName],
                             onClick = {
                                 navController.navigate(Screen.AppDetail.withArg(usage.packageName))
                             }

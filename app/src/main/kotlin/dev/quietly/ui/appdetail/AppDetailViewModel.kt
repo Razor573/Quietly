@@ -5,6 +5,9 @@ import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dev.quietly.data.db.dao.DayTotal
 import dev.quietly.data.db.entity.AppUsageEntity
+import dev.quietly.data.db.entity.GoalEntity
+import dev.quietly.data.source.UsageStatsSource
+import dev.quietly.domain.repository.GoalRepository
 import dev.quietly.domain.repository.UsageRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -16,18 +19,22 @@ import javax.inject.Inject
 
 data class AppDetailUiState(
     val isLoading:    Boolean              = true,
+    val packageName:  String               = "",
     val appLabel:     String               = "",
     val category:     String               = "",
     val todayMs:      Long                 = 0L,
     val avgDailyMs:   Long                 = 0L,
     val weeklyTotals: List<DayTotal>       = emptyList(),
     val history:      List<AppUsageEntity> = emptyList(),
-    val playStoreUrl: String               = ""
+    val playStoreUrl: String               = "",
+    val goal:         GoalEntity?          = null
 )
 
 @HiltViewModel
 class AppDetailViewModel @Inject constructor(
-    private val usageRepo: UsageRepository
+    private val usageRepo: UsageRepository,
+    private val goalRepo:  GoalRepository,
+    private val usageSource: UsageStatsSource
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(AppDetailUiState())
@@ -48,18 +55,51 @@ class AppDetailViewModel @Inject constructor(
             val avg = if (history.isNotEmpty())
                 history.sumOf { it.totalTimeMs } / history.size else 0L
 
+            val label = history.firstOrNull()?.appLabel?.ifBlank { null }
+                ?: usageSource.getLabel(pkg)
+            val category = history.firstOrNull()?.category?.ifBlank { null }
+                ?: usageSource.getCategory(pkg)
+
+            val goal = goalRepo.getByPackage(pkg)
+
             _state.update {
                 it.copy(
                     isLoading    = false,
-                    appLabel     = history.firstOrNull()?.appLabel ?: pkg,
-                    category     = history.firstOrNull()?.category ?: "",
+                    packageName  = pkg,
+                    appLabel     = label,
+                    category     = category,
                     todayMs      = todayRow?.totalTimeMs ?: 0L,
                     avgDailyMs   = avg,
                     weeklyTotals = weeklyTotals,
                     history      = history,
+                    goal         = goal,
                     playStoreUrl = "https://play.google.com/store/apps/details?id=$pkg"
                 )
             }
+        }
+    }
+
+    fun setGoal(limitMs: Long, reminder: Boolean) {
+        val current = _state.value
+        if (current.packageName.isBlank()) return
+        viewModelScope.launch {
+            val goal = GoalEntity(
+                packageName = current.packageName,
+                appLabel = current.appLabel,
+                dailyLimitMs = limitMs,
+                reminderEnabled = reminder
+            )
+            goalRepo.upsert(goal)
+            _state.update { it.copy(goal = goal) }
+        }
+    }
+
+    fun deleteGoal() {
+        val current = _state.value
+        val goal = current.goal ?: return
+        viewModelScope.launch {
+            goalRepo.delete(goal)
+            _state.update { it.copy(goal = null) }
         }
     }
 }

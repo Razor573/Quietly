@@ -4,6 +4,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -26,7 +28,16 @@ fun SettingsScreen(
     var showPinDialog by remember { mutableStateOf(false) }
 
     Scaffold(
-        topBar    = { TopAppBar(title = { Text("Settings") }) },
+        topBar    = {
+            TopAppBar(
+                title = { Text("Settings") },
+                navigationIcon = {
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(Icons.Outlined.ArrowBack, contentDescription = "Back")
+                    }
+                }
+            )
+        },
         bottomBar = { BottomNavBar(navController) }
     ) { pad ->
         Column(

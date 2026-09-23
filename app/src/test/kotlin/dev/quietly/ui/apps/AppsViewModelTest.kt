@@ -3,11 +3,14 @@ package dev.quietly.ui.apps
 import dev.quietly.data.db.dao.DayTotal
 import dev.quietly.data.db.entity.AppOverrideEntity
 import dev.quietly.data.db.entity.AppUsageEntity
+import dev.quietly.data.db.entity.GoalEntity
+import dev.quietly.domain.repository.GoalRepository
 import dev.quietly.domain.repository.UsageRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -23,6 +26,7 @@ class AppsViewModelTest {
 
     private val testDispatcher = StandardTestDispatcher()
     private val fakeRepo = FakeUsageRepository()
+    private val fakeGoalRepo = FakeGoalRepository()
 
     @Before
     fun setUp() {
@@ -36,7 +40,7 @@ class AppsViewModelTest {
 
     @Test
     fun `viewModel initializes and loads apps`() = runTest {
-        val vm = AppsViewModel(fakeRepo)
+        val vm = AppsViewModel(fakeRepo, fakeGoalRepo)
 
         val app1 = AppUsageEntity("com.app.a", 100, "App A", 1000L, 5)
         val app2 = AppUsageEntity("com.app.b", 100, "App B", 2000L, 10)
@@ -55,7 +59,7 @@ class AppsViewModelTest {
 
     @Test
     fun `setQuery filters apps by appLabel and packageName`() = runTest {
-        val vm = AppsViewModel(fakeRepo)
+        val vm = AppsViewModel(fakeRepo, fakeGoalRepo)
 
         val app1 = AppUsageEntity("com.social.chat", 100, "Chat App", 1000L, 5)
         val app2 = AppUsageEntity("com.game.puzzle", 100, "Puzzle Game", 2000L, 10)
@@ -80,7 +84,7 @@ class AppsViewModelTest {
 
     @Test
     fun `setSort updates app list order`() = runTest {
-        val vm = AppsViewModel(fakeRepo)
+        val vm = AppsViewModel(fakeRepo, fakeGoalRepo)
 
         val app1 = AppUsageEntity("com.a", 100, "Beta", 1000L, 20)
         val app2 = AppUsageEntity("com.b", 100, "Alpha", 5000L, 5)
@@ -93,6 +97,13 @@ class AppsViewModelTest {
 
         vm.setSort(AppSort.LAUNCHES)
         assertEquals(listOf("Beta", "Alpha"), vm.uiState.value.filtered.map { it.appLabel })
+    }
+
+    private class FakeGoalRepository : GoalRepository {
+        override fun observeAll(): Flow<List<GoalEntity>> = flowOf(emptyList())
+        override suspend fun getByPackage(pkg: String): GoalEntity? = null
+        override suspend fun upsert(goal: GoalEntity) {}
+        override suspend fun delete(goal: GoalEntity) {}
     }
 
     private class FakeUsageRepository : UsageRepository {

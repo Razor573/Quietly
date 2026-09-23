@@ -4,7 +4,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dev.quietly.data.db.entity.AppUsageEntity
+import dev.quietly.data.db.entity.GoalEntity
 import dev.quietly.data.source.UsageStatsSource
+import dev.quietly.domain.repository.GoalRepository
 import dev.quietly.domain.repository.UsageRepository
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -14,19 +16,21 @@ import javax.inject.Inject
 enum class AppSort { TIME_DESC, TIME_ASC, LAUNCHES, NAME }
 
 data class AppsUiState(
-    val apps:          List<AppUsageEntity> = emptyList(),
-    val filtered:      List<AppUsageEntity> = emptyList(),
-    val query:         String               = "",
-    val sort:          AppSort              = AppSort.TIME_DESC,
-    val totalApps:     Int                  = 0,
-    val totalOpens:    Int                  = 0,
-    val totalTimeMs:   Long                 = 0L,
-    val isLoading:     Boolean              = true
+    val apps:          List<AppUsageEntity>    = emptyList(),
+    val filtered:      List<AppUsageEntity>    = emptyList(),
+    val goals:         Map<String, GoalEntity> = emptyMap(),
+    val query:         String                  = "",
+    val sort:          AppSort                 = AppSort.TIME_DESC,
+    val totalApps:     Int                     = 0,
+    val totalOpens:    Int                     = 0,
+    val totalTimeMs:   Long                    = 0L,
+    val isLoading:     Boolean                 = true
 )
 
 @HiltViewModel
 class AppsViewModel @Inject constructor(
-    private val usageRepo: UsageRepository
+    private val usageRepo: UsageRepository,
+    private val goalRepo:  GoalRepository
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(AppsUiState())
@@ -37,27 +41,30 @@ class AppsViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 usageRepo.syncToday()
-            } catch (_: Exception) {
-                // Ignore sync errors gracefully and observe DB cache
+            } catch (_: Exception) {}
+
+            combine(
+                usageRepo.observeDay(today),
+                goalRepo.observeAll()
+            ) { apps, goals ->
+                Pair(apps, goals)
+            }.catch {
+                _state.update { s -> s.copy(isLoading = false) }
+            }.collect { (apps, goals) ->
+                _state.update { s ->
+                    val sorted = sort(apps, s.sort)
+                    val filtered = filter(sorted, s.query)
+                    s.copy(
+                        apps        = sorted,
+                        filtered    = filtered,
+                        goals       = goals.associateBy { it.packageName },
+                        totalApps   = apps.size,
+                        totalOpens  = apps.sumOf { it.launchCount },
+                        totalTimeMs = apps.sumOf { it.totalTimeMs },
+                        isLoading   = false
+                    )
+                }
             }
-            usageRepo.observeDay(today)
-                .catch {
-                    _state.update { s -> s.copy(isLoading = false) }
-                }
-                .collect { apps ->
-                    _state.update { s ->
-                        val sorted = sort(apps, s.sort)
-                        val filtered = filter(sorted, s.query)
-                        s.copy(
-                            apps        = sorted,
-                            filtered    = filtered,
-                            totalApps   = apps.size,
-                            totalOpens  = apps.sumOf { it.launchCount },
-                            totalTimeMs = apps.sumOf { it.totalTimeMs },
-                            isLoading   = false
-                        )
-                    }
-                }
         }
     }
 

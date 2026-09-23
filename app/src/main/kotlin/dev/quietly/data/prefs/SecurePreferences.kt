@@ -1,9 +1,14 @@
 package dev.quietly.data.prefs
 
 import android.content.Context
+import android.content.SharedPreferences
+import android.util.Log
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -11,15 +16,31 @@ import javax.inject.Singleton
 class SecurePreferences @Inject constructor(
     @ApplicationContext ctx: Context
 ) {
-    private val master = MasterKey.Builder(ctx)
-        .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-        .build()
-
-    private val prefs = EncryptedSharedPreferences.create(
-        ctx, "quietly_secure_prefs", master,
-        EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-        EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-    )
+    private val prefs: SharedPreferences = try {
+        val master = MasterKey.Builder(ctx)
+            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+            .build()
+        EncryptedSharedPreferences.create(
+            ctx, "quietly_secure_prefs", master,
+            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+        )
+    } catch (e: Exception) {
+        Log.e("SecurePreferences", "Failed to init EncryptedSharedPreferences, resetting or falling back", e)
+        try {
+            ctx.deleteSharedPreferences("quietly_secure_prefs")
+            val master = MasterKey.Builder(ctx)
+                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                .build()
+            EncryptedSharedPreferences.create(
+                ctx, "quietly_secure_prefs", master,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+            )
+        } catch (e2: Exception) {
+            ctx.getSharedPreferences("quietly_fallback_prefs", Context.MODE_PRIVATE)
+        }
+    }
 
     // ── onboarding ─────────────────────────────────────────────────────────────────────
     var onboardingComplete: Boolean
@@ -27,31 +48,34 @@ class SecurePreferences @Inject constructor(
         set(value) = prefs.edit().putBoolean(KEY_ONBOARDING, value).apply()
 
     // ── data retention ───────────────────────────────────────────────────────────
-    /**
-     * How many days of raw usage data to retain.
-     * Default is now 90 days to support the full importance-engine window.
-     * Users who previously stored 30 days will have their setting preserved;
-     * new installs default to 90.
-     */
     var retentionDays: Int
         get()      = prefs.getInt(KEY_RETENTION, 90)
         set(value) = prefs.edit().putInt(KEY_RETENTION, value).apply()
 
     // ── PIN lock (optional) ───────────────────────────────────────────────────────
-    /** Null means PIN is not set. */
+    private val _pinEnabledFlow = MutableStateFlow(prefs.getString(KEY_PIN, null) != null)
+    val pinEnabledFlow: StateFlow<Boolean> = _pinEnabledFlow.asStateFlow()
+
     var pinHash: String?
         get()      = prefs.getString(KEY_PIN, null)
         set(value) {
             if (value == null) prefs.edit().remove(KEY_PIN).apply()
             else prefs.edit().putString(KEY_PIN, value).apply()
+            _pinEnabledFlow.value = value != null
         }
 
     val pinEnabled: Boolean get() = pinHash != null
 
     // ── theme ───────────────────────────────────────────────────────────────────────
+    private val _darkThemeFlow = MutableStateFlow(prefs.getBoolean(KEY_DARK_THEME, true))
+    val darkThemeFlow: StateFlow<Boolean> = _darkThemeFlow.asStateFlow()
+
     var darkTheme: Boolean
         get()      = prefs.getBoolean(KEY_DARK_THEME, true)
-        set(value) = prefs.edit().putBoolean(KEY_DARK_THEME, value).apply()
+        set(value) {
+            prefs.edit().putBoolean(KEY_DARK_THEME, value).apply()
+            _darkThemeFlow.value = value
+        }
 
     // ── optional online metadata lookup ────────────────────────────────────────────
     /**
