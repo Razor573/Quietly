@@ -51,14 +51,40 @@ object DatabaseModule {
         }
     }
 
+    private val MIGRATION_4_5 = object : Migration(4, 5) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            // Create covering indices for lightning-fast range queries and sorting
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_app_usage_dateEpochDay_totalTimeMs` ON `app_usage` (`dateEpochDay`, `totalTimeMs`)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_app_usage_packageName_dateEpochDay` ON `app_usage` (`packageName`, `dateEpochDay`)")
+            // Purge any previously corrupted rows where an individual app's time exceeded 24 hours
+            db.execSQL("DELETE FROM app_usage WHERE totalTimeMs > 86400000")
+        }
+    }
+
+    private val MIGRATION_5_6 = object : Migration(5, 6) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("""
+                CREATE TABLE IF NOT EXISTS `calibration_samples` (
+                    `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    `epochDay` INTEGER NOT NULL,
+                    `packageName` TEXT,
+                    `rawDurationMs` INTEGER NOT NULL,
+                    `userActualDurationMs` INTEGER NOT NULL,
+                    `timestamp` INTEGER NOT NULL
+                )
+            """.trimIndent())
+        }
+    }
+
     @Provides @Singleton
     fun provideDatabase(@ApplicationContext ctx: Context): QuietlyDatabase =
         Room.databaseBuilder(ctx, QuietlyDatabase::class.java, "quietly.db")
-            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
             .fallbackToDestructiveMigration()
             .build()
 
     @Provides fun provideUsageDao(db: QuietlyDatabase): AppUsageDao         = db.appUsageDao()
     @Provides fun provideGoalDao(db: QuietlyDatabase): GoalDao               = db.goalDao()
     @Provides fun provideOverrideDao(db: QuietlyDatabase): AppOverrideDao   = db.appOverrideDao()
+    @Provides fun provideCalibrationDao(db: QuietlyDatabase): dev.quietly.data.db.dao.CalibrationSampleDao = db.calibrationSampleDao()
 }

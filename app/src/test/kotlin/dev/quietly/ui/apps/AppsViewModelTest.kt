@@ -117,6 +117,10 @@ class AppsViewModelTest {
 
         override suspend fun syncToday() {}
 
+        override suspend fun replaceRange(fromDay: Int, toDay: Int, entries: List<AppUsageEntity>) {}
+
+        override suspend fun saveEntries(entries: List<AppUsageEntity>) {}
+
         override suspend fun queryRange(fromDay: Int, toDay: Int): List<AppUsageEntity> = emptyList()
 
         override suspend fun dailyTotals(fromDay: Int, toDay: Int): List<DayTotal> = emptyList()
@@ -134,5 +138,22 @@ class AppsViewModelTest {
         override suspend fun setOverride(entity: AppOverrideEntity) {}
 
         override suspend fun clearOverride(packageName: String) {}
+
+        override fun observeCalibrationSamples(): Flow<List<dev.quietly.data.db.entity.CalibrationSampleEntity>> =
+            kotlinx.coroutines.flow.flowOf(emptyList())
+
+        override suspend fun getAllCalibrationSamples(): List<dev.quietly.data.db.entity.CalibrationSampleEntity> = emptyList()
+
+        override suspend fun recordCalibrationFeedback(
+            epochDay: Int,
+            packageName: String?,
+            rawDurationMs: Long,
+            userActualDurationMs: Long
+        ) {}
+
+        override suspend fun clearCalibration() {}
+
+        override fun getDayTelemetry(day: Int): dev.quietly.domain.ml.DayTelemetry =
+            dev.quietly.domain.ml.DayTelemetry(day, 0L)
     }
 }

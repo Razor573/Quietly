@@ -32,6 +32,7 @@ fun AppDetailScreen(
 ) {
     val s by vm.uiState.collectAsState()
     var showGoalDialog by remember { mutableStateOf(false) }
+    var showCalibrationDialog by remember { mutableStateOf(false) }
     LaunchedEffect(pkg) { vm.load(pkg) }
 
     Scaffold(
@@ -77,13 +78,24 @@ fun AppDetailScreen(
             // ── Stats summary ─────────────────────────────────────────────
             item {
                 Card(modifier = Modifier.fillMaxWidth()) {
-                    Row(
-                        modifier = Modifier.padding(16.dp).fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceEvenly
-                    ) {
-                        StatItem("Today",    s.todayMs.toHoursMinutes())
-                        StatItem("7-day avg", s.avgDailyMs.toHoursMinutes())
-                        StatItem("Category", s.category.ifBlank { "Uncategorized" })
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceEvenly
+                        ) {
+                            StatItem("Today",    s.todayMs.toHoursMinutes())
+                            StatItem("7-day avg", s.avgDailyMs.toHoursMinutes())
+                            StatItem("Category", s.category.ifBlank { "Uncategorized" })
+                        }
+
+                        Spacer(Modifier.height(12.dp))
+                        OutlinedButton(
+                            onClick = { showCalibrationDialog = true },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Text("🧠 Is this time accurate? Calibrate", style = MaterialTheme.typography.labelMedium)
+                        }
                     }
                 }
             }
@@ -183,6 +195,18 @@ fun AppDetailScreen(
                 onConfirm       = { _, _, limitMs, reminder ->
                     vm.setGoal(limitMs, reminder)
                     showGoalDialog = false
+                }
+            )
+        }
+
+        if (showCalibrationDialog) {
+            dev.quietly.ui.dashboard.MlCalibrationDialog(
+                title = s.appLabel.ifBlank { pkg },
+                currentDurationMs = s.todayMs,
+                onDismiss = { showCalibrationDialog = false },
+                onConfirmActualMinutes = { mins ->
+                    showCalibrationDialog = false
+                    vm.calibrateAppTime(mins)
                 }
             )
         }

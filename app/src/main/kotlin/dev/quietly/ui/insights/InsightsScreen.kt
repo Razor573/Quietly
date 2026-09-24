@@ -22,6 +22,7 @@ import dev.quietly.domain.ImportanceEngine.ImportanceLabel
 import dev.quietly.domain.ImportanceEngine.RecommendationType
 import dev.quietly.domain.ImportanceEngine.ScoredApp
 import dev.quietly.ui.components.BottomNavBar
+import dev.quietly.ui.navigation.Screen
 import dev.quietly.util.toHoursMinutes
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -57,89 +58,129 @@ fun InsightsScreen(
             return@Scaffold
         }
 
-        if (s.rankedApps.isEmpty()) {
-            EmptyInsightsState(pad)
-            return@Scaffold
-        }
-
-        LazyColumn(
-            contentPadding = PaddingValues(
-                top    = pad.calculateTopPadding() + 8.dp,
-                bottom = pad.calculateBottomPadding() + 16.dp,
-                start  = 16.dp,
-                end    = 16.dp
-            ),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(top = pad.calculateTopPadding(), bottom = pad.calculateBottomPadding())
         ) {
-
-            // ── Category breakdown ───────────────────────────────────────────────
-            if (s.categoryBreakdown.isNotEmpty()) {
-                item { CategoryBreakdownCard(breakdown = s.categoryBreakdown) }
-            }
-
-            // ── Remove candidates ────────────────────────────────────────────────
-            if (s.removeList.isNotEmpty()) {
-                item {
-                    SectionHeader(
-                        title    = "🗑️ Remove candidates",
-                        subtitle = "${s.removeList.size} app(s) with low importance and low recency.",
-                        tint     = MaterialTheme.colorScheme.error
-                    )
-                }
-                items(s.removeList) { app ->
-                    ScoredAppCard(
-                        app       = app,
-                        onOverride = { overrideTarget = app }
-                    )
-                }
-            }
-
-            // ── Limit candidates ─────────────────────────────────────────────────
-            if (s.limitList.isNotEmpty()) {
-                item {
-                    SectionHeader(
-                        title    = "⏱ Limit candidates",
-                        subtitle = "${s.limitList.size} app(s) are high-usage or distraction-prone.",
-                        tint     = MaterialTheme.colorScheme.tertiary
-                    )
-                }
-                items(s.limitList) { app ->
-                    ScoredAppCard(
-                        app       = app,
-                        onOverride = { overrideTarget = app }
-                    )
-                }
-            }
-
-            // ── Protected apps ──────────────────────────────────────────────────
-            if (s.protectedList.isNotEmpty()) {
-                item {
-                    SectionHeader(
-                        title    = "🛡️ Protected apps",
-                        subtitle = "${s.protectedList.size} app(s) are essential or manually protected.",
-                        tint     = MaterialTheme.colorScheme.primary
-                    )
-                }
-                items(s.protectedList) { app ->
-                    ScoredAppCard(
-                        app        = app,
-                        onOverride = { overrideTarget = app }
-                    )
-                }
-            }
-
-            // ── Full ranked list ───────────────────────────────────────────────────
-            item {
-                SectionHeader(
-                    title    = "📊 All apps — ranked by importance",
-                    subtitle = "90-day analysis window. Tap any app to set an override."
+            PrimaryTabRow(
+                selectedTabIndex = s.selectedTab,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Tab(
+                    selected = s.selectedTab == 0,
+                    onClick = { vm.setTab(0) },
+                    text = { Text("App Audit", fontWeight = FontWeight.SemiBold) },
+                    icon = { Icon(Icons.Outlined.Analytics, contentDescription = null) }
+                )
+                Tab(
+                    selected = s.selectedTab == 1,
+                    onClick = { vm.setTab(1) },
+                    text = { Text("Habit Intelligence 🧠", fontWeight = FontWeight.SemiBold) },
+                    icon = { Icon(Icons.Outlined.Psychology, contentDescription = null) }
                 )
             }
-            items(s.rankedApps) { app ->
-                ScoredAppCard(
-                    app        = app,
-                    onOverride = { overrideTarget = app }
-                )
+
+            if (s.selectedTab == 1) {
+                val report = s.intelligenceReport
+                if (report != null) {
+                    HabitIntelligenceTab(
+                        report = report,
+                        isRecalculating = s.isRecalculating,
+                        onRecalculate = { vm.reanalyzeIntelligence() },
+                        onNavigateToGoals = { navController.navigate(Screen.Goals.route) },
+                        contentPadding = PaddingValues(16.dp)
+                    )
+                } else {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator()
+                    }
+                }
+            } else {
+                if (s.rankedApps.isEmpty()) {
+                    EmptyInsightsState(PaddingValues(16.dp))
+                } else {
+                    LazyColumn(
+                        contentPadding = PaddingValues(
+                            top    = 8.dp,
+                            bottom = 16.dp,
+                            start  = 16.dp,
+                            end    = 16.dp
+                        ),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+
+                        // ── Category breakdown ───────────────────────────────────────────────
+                        if (s.categoryBreakdown.isNotEmpty()) {
+                            item { CategoryBreakdownCard(breakdown = s.categoryBreakdown) }
+                        }
+
+                        // ── Remove candidates ────────────────────────────────────────────────
+                        if (s.removeList.isNotEmpty()) {
+                            item {
+                                SectionHeader(
+                                    title    = "🗑️ Remove candidates",
+                                    subtitle = "${s.removeList.size} app(s) with low importance and low recency.",
+                                    tint     = MaterialTheme.colorScheme.error
+                                )
+                            }
+                            items(s.removeList) { app ->
+                                ScoredAppCard(
+                                    app       = app,
+                                    onOverride = { overrideTarget = app }
+                                )
+                            }
+                        }
+
+                        // ── Limit candidates ─────────────────────────────────────────────────
+                        if (s.limitList.isNotEmpty()) {
+                            item {
+                                SectionHeader(
+                                    title    = "⏱ Limit candidates",
+                                    subtitle = "${s.limitList.size} app(s) are high-usage or distraction-prone.",
+                                    tint     = MaterialTheme.colorScheme.tertiary
+                                )
+                            }
+                            items(s.limitList) { app ->
+                                ScoredAppCard(
+                                    app       = app,
+                                    onOverride = { overrideTarget = app }
+                                )
+                            }
+                        }
+
+                        // ── Protected apps ──────────────────────────────────────────────────
+                        if (s.protectedList.isNotEmpty()) {
+                            item {
+                                SectionHeader(
+                                    title    = "🛡️ Protected apps",
+                                    subtitle = "${s.protectedList.size} app(s) are essential or manually protected.",
+                                    tint     = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                            items(s.protectedList) { app ->
+                                ScoredAppCard(
+                                    app        = app,
+                                    onOverride = { overrideTarget = app }
+                                )
+                            }
+                        }
+
+                        // ── Full ranked list ───────────────────────────────────────────────────
+                        item {
+                            SectionHeader(
+                                title    = "📊 All apps — ranked by importance",
+                                subtitle = "90-day analysis window. Tap any app to set an override."
+                            )
+                        }
+                        items(s.rankedApps) { app ->
+                            ScoredAppCard(
+                                app        = app,
+                                onOverride = { overrideTarget = app }
+                            )
+                        }
+                    }
+                }
             }
         }
     }

@@ -17,6 +17,10 @@ interface AppUsageDao {
     @Query("SELECT * FROM app_usage WHERE dateEpochDay = :day ORDER BY totalTimeMs DESC")
     fun observeDay(day: Int): Flow<List<AppUsageEntity>>
 
+    /** Single day direct lookup utilizing (dateEpochDay, totalTimeMs) covering index. */
+    @Query("SELECT * FROM app_usage WHERE dateEpochDay = :day ORDER BY totalTimeMs DESC")
+    suspend fun queryDay(day: Int): List<AppUsageEntity>
+
     /** Aggregate across a date range (weekly/monthly charts). */
     @Query("""
         SELECT packageName,
@@ -86,6 +90,17 @@ interface AppUsageDao {
 
     @Query("DELETE FROM app_usage WHERE dateEpochDay < :beforeDay")
     suspend fun purgeOlderThan(beforeDay: Int)
+
+    @Query("DELETE FROM app_usage WHERE dateEpochDay BETWEEN :fromDay AND :toDay")
+    suspend fun deleteRange(fromDay: Int, toDay: Int)
+
+    @Transaction
+    suspend fun replaceRange(fromDay: Int, toDay: Int, entities: List<AppUsageEntity>) {
+        deleteRange(fromDay, toDay)
+        if (entities.isNotEmpty()) {
+            upsertAll(entities)
+        }
+    }
 }
 
 data class DayTotal(val dateEpochDay: Int, val totalTimeMs: Long)

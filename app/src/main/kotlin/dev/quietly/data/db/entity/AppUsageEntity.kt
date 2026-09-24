@@ -10,7 +10,11 @@ import androidx.room.Index
 @Entity(
     tableName = "app_usage",
     primaryKeys = ["packageName", "dateEpochDay"],
-    indices = [Index(value = ["dateEpochDay"])]
+    indices = [
+        Index(value = ["dateEpochDay", "totalTimeMs"]),
+        Index(value = ["dateEpochDay"]),
+        Index(value = ["packageName", "dateEpochDay"])
+    ]
 )
 data class AppUsageEntity(
     val packageName:     String,

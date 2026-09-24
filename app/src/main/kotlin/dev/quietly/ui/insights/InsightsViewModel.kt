@@ -7,39 +7,52 @@ import dev.quietly.data.db.entity.AppOverrideEntity
 import dev.quietly.domain.ImportanceEngine
 import dev.quietly.domain.ImportanceEngine.RecommendationType
 import dev.quietly.domain.ImportanceEngine.ScoredApp
+import dev.quietly.domain.intelligence.HabitIntelligenceEngine
+import dev.quietly.domain.intelligence.HabitIntelligenceEngine.IntelligenceReport
+import dev.quietly.domain.repository.GoalRepository
 import dev.quietly.domain.repository.UsageRepository
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import javax.inject.Inject
 
 data class InsightsUiState(
-    val isLoading:         Boolean          = true,
+    val isLoading:          Boolean             = true,
+    val selectedTab:        Int                 = 0, // 0: App Importance, 1: Habit Intelligence
+    val isRecalculating:    Boolean             = false,
     /** All apps ranked by importance score (highest first). */
-    val rankedApps:        List<ScoredApp>  = emptyList(),
+    val rankedApps:         List<ScoredApp>     = emptyList(),
     /** Apps that are safe removal candidates. */
-    val removeList:        List<ScoredApp>  = emptyList(),
+    val removeList:         List<ScoredApp>     = emptyList(),
     /** Apps that are distraction-heavy and should be limited, not removed. */
-    val limitList:         List<ScoredApp>  = emptyList(),
+    val limitList:          List<ScoredApp>     = emptyList(),
     /** Protected apps (essential / user-marked). */
-    val protectedList:     List<ScoredApp>  = emptyList(),
+    val protectedList:      List<ScoredApp>     = emptyList(),
     /** Category breakdown: category name -> total ms in 90-day window. */
-    val categoryBreakdown: Map<String, Long> = emptyMap(),
-    val analysisWindowDays: Int             = 90
+    val categoryBreakdown:  Map<String, Long>   = emptyMap(),
+    val analysisWindowDays: Int                 = 90,
+    val intelligenceReport: IntelligenceReport? = null
 )
 
 @HiltViewModel
 class InsightsViewModel @Inject constructor(
-    private val usageRepo: UsageRepository
+    private val usageRepo: UsageRepository,
+    private val goalRepo: GoalRepository
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(InsightsUiState())
     val uiState: StateFlow<InsightsUiState> = _state.asStateFlow()
 
     init { load() }
+
+    fun setTab(index: Int) {
+        _state.update { it.copy(selectedTab = index) }
+    }
 
     fun load() {
         viewModelScope.launch {
@@ -51,6 +64,8 @@ class InsightsViewModel @Inject constructor(
             val aggregated   = usageRepo.query90DayAggregated(today)
             val allDailyRows = usageRepo.allPerDayRows90(today)
             val overrideList = usageRepo.getOverrides()
+            val goals        = goalRepo.observeAll().first()
+            val todayUsage   = usageRepo.observeDay(today).first()
 
             // Build per-day map: packageName -> list of daily rows
             val perDayMap = allDailyRows.groupBy { it.packageName }
@@ -71,6 +86,13 @@ class InsightsViewModel @Inject constructor(
                 todayEpochDay = today
             )
 
+            // ── Run Habit Intelligence Engine ───────────────────────────────
+            val intelligenceReport = HabitIntelligenceEngine.analyze(
+                todayUsage = todayUsage,
+                history90Days = allDailyRows,
+                goals = goals
+            )
+
             // ── Partition into sections ──────────────────────────────────────
             val removeList    = scored.filter { it.recommendation == RecommendationType.REMOVE }
             val limitList     = scored.filter { it.recommendation == RecommendationType.LIMIT }
@@ -89,9 +111,19 @@ class InsightsViewModel @Inject constructor(
                     limitList          = limitList,
                     protectedList      = protectedList,
                     categoryBreakdown  = catBreak,
-                    analysisWindowDays = 90
+                    analysisWindowDays = 90,
+                    intelligenceReport = intelligenceReport
                 )
             }
+        }
+    }
+
+    fun reanalyzeIntelligence() {
+        viewModelScope.launch {
+            _state.update { it.copy(isRecalculating = true) }
+            delay(400) // Brief sensory feedback
+            load()
+            _state.update { it.copy(isRecalculating = false) }
         }
     }
 

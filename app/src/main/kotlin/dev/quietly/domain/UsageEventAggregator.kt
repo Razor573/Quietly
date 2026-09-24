@@ -38,26 +38,24 @@ private class PackageState {
 object UsageEventAggregator {
 
     // Android UsageEvents event type constants
-    const val EVENT_ACTIVITY_RESUMED = 1
-    const val EVENT_ACTIVITY_PAUSED  = 2
-    const val EVENT_ACTIVITY_STOPPED = 23
+    const val EVENT_ACTIVITY_RESUMED        = 1
+    const val EVENT_ACTIVITY_PAUSED         = 2
+    const val EVENT_SCREEN_INTERACTIVE      = 15
+    const val EVENT_SCREEN_NON_INTERACTIVE  = 16
+    const val EVENT_KEYGUARD_SHOWN          = 17
+    const val EVENT_KEYGUARD_HIDDEN         = 18
+    const val EVENT_ACTIVITY_STOPPED        = 23
 
     /**
      * Aggregates raw usage events into per-app, per-local-day totals.
      *
-     * Key fixes vs the previous implementation:
-     * 1. Day bucketing uses the DEVICE's local timezone, not UTC.
-     *    Without this, users east of UTC (e.g. UTC+4) see evening usage
-     *    attributed to the wrong day and filtered out.
-     * 2. Dangling sessions (app still open when query window ends) are closed
-     *    at [nowMs] instead of being silently dropped.
-     * 3. ACTIVITY_STOPPED is treated the same as ACTIVITY_PAUSED so sessions
-     *    are always closed even when the paused event is missing.
-     *
-     * @param events       Raw events from UsageStatsManager, in any order.
-     * @param fromEpochDay First local-day to include (inclusive), as local epoch day.
-     * @param toEpochDay   Last local-day to include (inclusive), as local epoch day.
-     * @param nowMs        Current wall-clock time; open sessions are closed here.
+     * Enhanced features:
+     * 1. Handles screen-off (SCREEN_NON_INTERACTIVE & KEYGUARD_SHOWN) to close open sessions
+     *    accurately instead of leaving them dangling when device sleeps.
+     * 2. Sequential app handover: when a new app resumes, any other currently active package
+     *    foreground session is closed at that timestamp.
+     * 3. Day bucketing uses the device's local timezone.
+     * 4. Dangling sessions at nowMs are closed cleanly.
      */
     fun aggregate(
         events: List<RawUsageEvent>,
@@ -97,29 +95,35 @@ object UsageEventAggregator {
                     }
                     activeSet.add(cls)
                 }
-                EVENT_ACTIVITY_PAUSED -> {
+                EVENT_ACTIVITY_PAUSED, EVENT_ACTIVITY_STOPPED -> {
                     val activeSet = activeActivitiesByPkg[pkg]
                     if (activeSet != null) {
                         activeSet.remove(cls)
+                        // If no more active activities for this package or empty, close session
                         if (activeSet.isEmpty()) {
                             val startTime = pkgForegroundStart.remove(pkg)
                             if (startTime != null && e.timestampMs >= startTime) {
                                 state.sessions.add(Session(startMs = startTime, endMs = e.timestampMs))
                             }
+                        }
+                    } else {
+                        // Class wasn't tracked, close any open session for package
+                        val startTime = pkgForegroundStart.remove(pkg)
+                        if (startTime != null && e.timestampMs >= startTime) {
+                            state.sessions.add(Session(startMs = startTime, endMs = e.timestampMs))
                         }
                     }
                 }
-                EVENT_ACTIVITY_STOPPED -> {
-                    val activeSet = activeActivitiesByPkg[pkg]
-                    if (activeSet != null && activeSet.contains(cls)) {
-                        activeSet.remove(cls)
-                        if (activeSet.isEmpty()) {
-                            val startTime = pkgForegroundStart.remove(pkg)
-                            if (startTime != null && e.timestampMs >= startTime) {
-                                state.sessions.add(Session(startMs = startTime, endMs = e.timestampMs))
-                            }
+                EVENT_SCREEN_NON_INTERACTIVE, EVENT_KEYGUARD_SHOWN -> {
+                    // Screen turned off or phone locked -> close all open foreground sessions
+                    for ((p, startTime) in pkgForegroundStart) {
+                        if (e.timestampMs >= startTime) {
+                            val pState = stateByPkg.getOrPut(p) { PackageState() }
+                            pState.sessions.add(Session(startMs = startTime, endMs = e.timestampMs))
                         }
                     }
+                    pkgForegroundStart.clear()
+                    activeActivitiesByPkg.clear()
                 }
             }
         }

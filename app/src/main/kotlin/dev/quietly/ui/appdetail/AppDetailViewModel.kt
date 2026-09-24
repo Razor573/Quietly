@@ -102,4 +102,20 @@ class AppDetailViewModel @Inject constructor(
             _state.update { it.copy(goal = null) }
         }
     }
+
+    fun calibrateAppTime(actualMinutes: Int) {
+        val current = _state.value
+        if (current.packageName.isBlank()) return
+        viewModelScope.launch {
+            val today = LocalDate.now().toEpochDay().toInt()
+            val actualMs = actualMinutes * 60_000L
+            usageRepo.recordCalibrationFeedback(
+                epochDay = today,
+                packageName = current.packageName,
+                rawDurationMs = current.todayMs,
+                userActualDurationMs = actualMs
+            )
+            load(current.packageName)
+        }
+    }
 }
